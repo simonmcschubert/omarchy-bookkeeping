@@ -166,6 +166,12 @@ async function save() {
     });
     const body = await response.json();
     if (response.status === 409) {
+      // Saved by a newer version in another window: this page can't open it.
+      // Reloaded, it gets that version's code, or says why it can't.
+      if (unreadable(body.data)) {
+        location.reload();
+        return;
+      }
       state.revision = body.revision;
       state.data = upgradeData(body.data ?? emptyData());
       toast("Changed in another window: showing that version. Make the last change again.", "bad");
