@@ -9,7 +9,8 @@ The page's colors come from the current Omarchy theme. Updates come from
 updates.py and the update script next to this file; they never touch the
 data.
 
-Python standard library only (3.11 or newer).
+Python standard library only (3.11 or newer). Invoice PDFs also need
+Chromium, Java and pikepdf: see invoice_pdf.py.
 """
 
 import argparse
@@ -27,6 +28,7 @@ import traceback
 from pathlib import Path
 
 import einvoice_reader
+import invoice_pdf
 import updates
 
 PORT = 47221
@@ -54,6 +56,11 @@ STATIC = {
     "/einvoice.mjs": ("einvoice.mjs", "text/javascript; charset=utf-8"),
     "/einvoice.css": ("einvoice.css", "text/css; charset=utf-8"),
     "/update.mjs": ("update.mjs", "text/javascript; charset=utf-8"),
+    "/invoices.mjs": ("invoices.mjs", "text/javascript; charset=utf-8"),
+    "/invoices-view.mjs": ("invoices-view.mjs", "text/javascript; charset=utf-8"),
+    "/invoice-html.mjs": ("invoice-html.mjs", "text/javascript; charset=utf-8"),
+    "/invoice-xml.mjs": ("invoice-xml.mjs", "text/javascript; charset=utf-8"),
+    "/invoice.css": ("invoice.css", "text/css; charset=utf-8"),
     "/icon.svg": ("icon.svg", "image/svg+xml"),
 }
 
@@ -186,6 +193,16 @@ def home_short(path):
     return f"~/{Path(path).relative_to(home)}" if Path(path).is_relative_to(home) else str(path)
 
 
+def store_receipt(data_file, body, ext):
+    """Keeps a file in receipts/ under the SHA-256 of its content; returns
+    its name. The same file twice is kept once."""
+    name = f"{hashlib.sha256(body).hexdigest()}.{ext}"
+    target = receipt_dir(data_file) / name
+    if not target.exists():
+        write_atomic(target, body)
+    return name
+
+
 def today():
     """The local date, as backups are named: 2026-11-19."""
     return datetime.date.today().isoformat()
@@ -270,6 +287,7 @@ class BookkeepingServer(http.server.ThreadingHTTPServer):
         # updates.Updater; without one (tests), no /api/update.
         self.updater = updater
         self.saving = threading.Lock()
+        self.making = threading.Lock()  # one invoice PDF at a time
         super().__init__(("127.0.0.1", port), Handler)
         bound = self.server_address[1]
         self.hosts = {f"127.0.0.1:{bound}", f"localhost:{bound}"}
@@ -334,6 +352,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.get_einvoice(path.removeprefix("/api/einvoice/"))
         elif path == "/api/update" and self.server.updater:
             self.send_json(200, self.server.updater.snapshot())
+        elif path == "/api/invoices/tools":
+            tools = invoice_pdf.find_tools()
+            self.send_json(200, {"ready": not invoice_pdf.missing_tools(tools), "missing": invoice_pdf.missing_tools(tools)})
         elif path == "/theme.css":
             body = theme_css(self.server.theme_path).encode()
             self.send_body(200, body, "text/css; charset=utf-8")
@@ -419,6 +440,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if body is not NO_BODY:
                 self.send_json(*updates.answer(self.server.updater, body))
             return
+        if path == "/api/invoices":
+            self.post_invoice()
+            return
         if path != "/api/receipts":
             self.send_json(404, {"error": "Not found"})
             return
@@ -433,16 +457,48 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.send_json(400, {"error": "The file is empty"})
             return
         ext = RECEIPT_TYPES[content_type][0]
-        name = f"{hashlib.sha256(body).hexdigest()}.{ext}"
-        target = receipt_dir(self.server.data_file) / name
         try:
-            if not target.exists():
-                write_atomic(target, body)
+            name = store_receipt(self.server.data_file, body, ext)
         except OSError as error:
             self.log_error("saving a receipt failed: %s", error)
             self.send_json(500, {"error": f"Could not save: {error.strerror}"})
             return
         self.send_json(200, {"file": name, "size": len(body), "einvoice": read_einvoice(body, ext)})
+
+    def post_invoice(self):
+        """{html, xml, title} -> the e-invoice PDF, checked and kept in
+        receipts/ when valid: {file, size, validation}. An invalid one is
+        not kept: 422 with the validation, so the page can show why."""
+        body = self.read_json()
+        if body is NO_BODY:
+            return
+        fields = [body.get(key) if isinstance(body, dict) else None for key in ("html", "xml", "title")]
+        if not all(isinstance(value, str) and value for value in fields):
+            self.send_json(400, {"error": "Expected {html, xml, title}"})
+            return
+        html, xml, title = fields
+        tools = invoice_pdf.find_tools()
+        missing = invoice_pdf.missing_tools(tools)
+        if missing:
+            self.send_json(503, {"error": f"Missing: {', '.join(missing)}. Run setup to install them.", "missing": missing})
+            return
+        with self.server.making:
+            try:
+                pdf, report = invoice_pdf.make_invoice(html, xml, title[:200], tools)
+            except invoice_pdf.InvoiceError as error:
+                self.log_error("invoice PDF failed: %s", error)
+                self.send_json(500, {"error": str(error)})
+                return
+        if not report["valid"]:
+            self.send_json(422, {"error": "The e-invoice did not pass the check", "validation": report})
+            return
+        try:
+            name = store_receipt(self.server.data_file, pdf, "pdf")
+        except OSError as error:
+            self.log_error("saving an invoice failed: %s", error)
+            self.send_json(500, {"error": f"Could not save: {error.strerror}"})
+            return
+        self.send_json(200, {"file": name, "size": len(pdf), "validation": report})
 
     def do_PUT(self):
         if not self.allowed():

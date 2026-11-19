@@ -247,6 +247,7 @@ export function years(data, now = new Date()) {
   set.add(now.getFullYear());
   for (const y of Object.keys(data.homeOffice ?? {})) set.add(Number(y));
   for (const y of assetDates(data, now.getFullYear())) set.add(y);
+  for (const invoice of data.invoices ?? []) if (invoice.date) set.add(Number(invoice.date.slice(0, 4)));
   return [...set].sort((a, b) => b - a);
 }
 
@@ -254,9 +255,12 @@ export function isClosed(data, year) {
   return (data.closed ?? []).includes(year);
 }
 
+/** The next running number. Invoices count too: an issued invoice has its
+ *  number before it is paid, and a cancellation invoice has one of its own. */
 export function nextNumber(data) {
   let max = 0;
   for (const entry of data.entries) if (entry.kind === "income" && Number.isInteger(entry.number)) max = Math.max(max, entry.number);
+  for (const invoice of data.invoices ?? []) if (Number.isInteger(invoice.number)) max = Math.max(max, invoice.number);
   return max + 1;
 }
 

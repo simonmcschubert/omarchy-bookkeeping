@@ -34,11 +34,14 @@ import { aveurCard, drawAssets, editingAsset, printAssets, startAssetFromEntry }
 import { applyImport, planImport, readTable } from "./import.mjs";
 import { backupState } from "./backup.mjs";
 import { RECEIPT_ACCEPT, expenseFromInvoice, hasInvoiceView, invoiceSummary, invoiceView } from "./einvoice.mjs";
+import { REGULAR, forgetPayment, numberProblems, vatStatus } from "./invoices.mjs";
+import { customerField, customerIncomeCard, drawInvoices, editingInvoice, openInvoicesCard } from "./invoices-view.mjs";
 import { startUpdates } from "./update.mjs";
 
 const VIEWS = [
   ["overview", "Overview"],
   ["entries", "Entries"],
+  ["invoices", "Invoices"],
   ["assets", "Assets"],
   ["euer", "EÜR"],
   ["settings", "Settings"],
@@ -233,14 +236,14 @@ function render() {
   drawYearPicker(view);
   const main = document.getElementById("main");
   const scroll = window.scrollY;
-  const views = { overview: drawOverview, entries: drawEntries, assets: () => drawAssets(ui()), euer: drawEuer, settings: () => drawSettings(tab) };
+  const views = { overview: drawOverview, entries: drawEntries, invoices: () => drawInvoices(ui(), tab === "customers" ? "customers" : "invoices"), assets: () => drawAssets(ui()), euer: drawEuer, settings: () => drawSettings(tab) };
   main.replaceChildren(h("div", {}, views[view]()));
   window.scrollTo(0, scroll);
 }
 
 /** What the views in other modules get to draw and change with. */
 function ui() {
-  return { h, card, segmented, state, change, render, toast, uploadReceipt };
+  return { h, card, segmented, state, change, render, toast, uploadReceipt, todayIso, sent };
 }
 
 function drawYearPicker(view) {
@@ -288,9 +291,10 @@ function drawOverview() {
   return [
     backup.warning ? h("p", { class: "notice" }, `${backup.warning} `, h("a", { href: "#settings/backup", text: "Settings › Backup" })) : null,
     tiles,
+    openInvoicesCard(ui()),
     card("Profit per year", yearChart(perYear), h("p", { class: "muted small", text: "Click a year to see it." })),
     card(`${state.year} by month`, monthChart(t.months), yearlyNote(t)),
-    h("div", { class: "columns" }, categoryCard("Income by category", "income"), categoryCard("Expenses by category", "expense")),
+    h("div", { class: "columns" }, categoryCard("Income by category", "income"), customerIncomeCard(ui()), categoryCard("Expenses by category", "expense")),
   ];
 }
 
@@ -859,6 +863,7 @@ function editor() {
       e.kind === "income"
         ? h("label", {}, "No.", h("input", { name: "number", inputmode: "numeric", value: e.number ?? "", oninput: set("number") }))
         : null,
+      e.kind === "income" ? customerField(ui(), e) : null,
       h("label", {}, e.kind === "income" ? "Payer's invoice no." : "Invoice no.", h("input", { name: "ref", value: e.ref ?? "", oninput: set("ref") })),
       h("label", { class: "wide" }, "Receipt", receipt),
     ),
@@ -905,7 +910,9 @@ function saveEntry() {
   }
   const original = state.data.entries.find((x) => x.id === e.id);
   if (original?.imported) entry.imported = true;
-  const problems = entryProblems(state.data, entry);
+  if (e.kind === "income" && e.customer) entry.customer = e.customer;
+  if (original?.invoice) entry.invoice = original.invoice; // the invoice it paid
+  const problems = [...entryProblems(state.data, entry), ...numberProblems(state.data, entry)];
   if (original && isClosed(state.data, Number(original.date.slice(0, 4)))) problems.push("Its year is closed.");
   if (problems.length) {
     state.editorProblems = problems;
@@ -924,10 +931,12 @@ function saveEntry() {
 
 function deleteEntry(id) {
   const entry = state.data.entries.find((x) => x.id === id);
-  if (!entry || !confirm(`Delete "${entry.text}" (${euro(entry.amount)})?`)) return;
+  const paid = entry?.invoice ? " It is the payment of an invoice, which is then open again." : "";
+  if (!entry || !confirm(`Delete "${entry.text}" (${euro(entry.amount)})?${paid}`)) return;
   state.editing = null;
   change((data) => {
     data.entries = data.entries.filter((x) => x.id !== id);
+    forgetPayment(data, id);
   });
   toast("Deleted");
 }
@@ -1149,7 +1158,8 @@ function drawCategories() {
     h("option", { value: "", selected: !value, text: "No EÜR line" }),
     ...state.data.groups.filter((g) => g.kind === kind && !isComputedGroup(g.id)).map((g) => h("option", { value: g.id, selected: g.id === value, text: g.label })),
   ];
-  const used = new Set(state.data.entries.map((e) => e.category));
+  // Invoices too: an issued one can't change, and counts on its category when paid.
+  const used = new Set([...state.data.entries, ...(state.data.invoices ?? [])].map((x) => x.category));
   const categoryRows = (kind) =>
     state.data.categories
       .filter((c) => c.kind === kind)
@@ -1386,9 +1396,19 @@ function drawBusiness() {
   return [
     card(
       "Business",
-      h("p", { class: "muted small", text: "Shown on the EÜR and, later, on invoices. Stays in the data file on this computer." }),
-      h("div", { class: "form-grid" }, field("name", "Name", "Vorname Nachname"), field("taxNumber", "Steuernummer", "12/345/67890"), field("address", "Address", "Straße 1\n10000 Berlin", true), field("iban", "IBAN", "DE00 …")),
+      h("p", { class: "muted small", text: "Shown on the EÜR and on invoices. Stays in the data file on this computer." }),
+      h(
+        "div",
+        { class: "form-grid" },
+        field("name", "Name", "Vorname Nachname"),
+        field("taxNumber", "Steuernummer", "12/345/67890"),
+        field("address", "Address", "Straße 1\n10000 Berlin", true),
+        field("iban", "IBAN", "DE00 …"),
+        field("email", "Email (optional, on invoices)", "name@example.de"),
+        field("vatId", "USt-IdNr. (optional)", "DE123456789"),
+      ),
     ),
+    vatCard(),
     card(
       "Files",
       h("dl", { class: "paths" }, h("dt", { text: "Data" }), h("dd", {}, h("code", { text: state.paths.file ?? "" })), h("dt", { text: "Daily copies" }), h("dd", {}, h("code", { text: state.paths.backups ?? "" })), h("dt", { text: "Receipts" }), h("dd", {}, h("code", { text: state.paths.receipts ?? "" }))),
@@ -1447,10 +1467,53 @@ function drawUpdates() {
   ];
 }
 
+/** The VAT status of each year: Kleinunternehmer (§ 19 UStG) unless set. */
+function vatCard() {
+  const now = new Date().getFullYear();
+  const list = [...new Set([now + 1, ...years(state.data)])].sort((a, b) => b - a);
+  return card(
+    "VAT",
+    h("p", { class: "muted small", text: "Kleinunternehmer (§ 19 UStG): invoices carry no VAT, with the § 19 note. The year of the service decides. Invoices with VAT (Regelbesteuerung) are not built yet." }),
+    h(
+      "table",
+      { class: "compact vat-years" },
+      h(
+        "tbody",
+        {},
+        list.map((year) =>
+          h(
+            "tr",
+            {},
+            h("td", { class: "num", text: year }),
+            h(
+              "td",
+              {},
+              h(
+                "select",
+                {
+                  "aria-label": `VAT status ${year}`,
+                  onchange: (e) =>
+                    change((data) => {
+                      data.vatStatus ??= {};
+                      if (e.target.value === REGULAR) data.vatStatus[year] = REGULAR;
+                      else delete data.vatStatus[year];
+                    }),
+                },
+                h("option", { value: "", selected: vatStatus(state.data, year) !== REGULAR, text: "Kleinunternehmer (§ 19 UStG)" }),
+                h("option", { value: REGULAR, selected: vatStatus(state.data, year) === REGULAR, text: "Charges VAT (Regelbesteuerung)" }),
+              ),
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
 // ---- start
 
 setUpDrop();
-const updates = startUpdates(document.getElementById("update"), { saving: () => sending > 0, editing: () => state.editing !== null || editingAsset() });
+const updates = startUpdates(document.getElementById("update"), { saving: () => sending > 0, editing: () => state.editing !== null || editingAsset() || editingInvoice(state) });
 
 Promise.all([load(), loadBackup()])
   .then(() => {

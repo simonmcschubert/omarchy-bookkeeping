@@ -11,7 +11,8 @@ and maybe a receipt. _Avoid_: transaction, booking.
 amount is a refund of its kind.
 
 **Running number** (`number`, Nr.): the own number each income gets, counted
-on across years (`nextNumber`). Expenses have none.
+on across years (`nextNumber`). An issued invoice takes the next one, and
+its income keeps it when paid. Expenses have none.
 
 **Reference** (`ref`): the other side's invoice number: the supplier's for
 an expense, the payer's (Rechnungsnr. EXTERN) for income.
@@ -53,7 +54,8 @@ the destination, kept there, so every version stays.
 
 **Receipt**: the file behind an entry: a PDF, photo or e-invoice XML, kept
 unchanged in `receipts/` under the SHA-256 of its content. `einvoice` says
-whether it was read as an e-invoice (unset on older receipts).
+whether it was read as an e-invoice (unset on older receipts). An invoice
+PDF is kept the same way, and is the receipt of its income.
 
 **E-invoice**: a structured invoice by EN 16931: XRechnung or another, as XML
 in UBL or CII syntax, alone or inside a ZUGFeRD / Factur-X PDF. The server
@@ -120,3 +122,40 @@ installs: a **release** (`X.Y.Z`, the git tag `vX.Y.Z`) or, on the Preview
 `preview`). The channel (`stable` or `preview`) is kept in the checkout's
 git config (`bookkeeping.channel`). Updates change only the code, never the
 data or receipts, and never go back to an older version. _Avoid_: upgrade.
+
+**Customer** (`customers`): name, address, country (two letters), maybe an
+email and a VAT ID (USt-IdNr.). An income can name its customer
+(`customer`), so income shows by customer.
+
+**Invoice** (`invoices`): a customer, an invoice date, the service date or
+period (`service`), lines (`items`: text, quantity, `unit`, `price`), the
+days to pay (`terms`) and the income category it counts on. Its **status**
+is draft, sent, paid or cancelled.
+
+**Draft**: an invoice that can still change and has no number.
+
+**Issue**: a draft gets the next running number, its PDF, and copies of the
+**seller** (the business details) and the **buyer** (the customer) as they
+are that day. It is then sent and can't change.
+
+**Invoice PDF** (`pdf`): the e-invoice an issued invoice becomes, as
+ZUGFeRD 2.5.2 (= Factur-X 1.09.2): PDF/A-3 with the invoice data inside as
+XML (UN/CEFACT CII, profile EN 16931). Each one is **validated** by the Mustang validator
+before it is kept; the result is kept with it (`validation`).
+
+**Paid**: marked with the day the money came. That adds the income entry
+on that day (Zuflussprinzip), linked both ways (`paid.entry`, `invoice`).
+
+**Cancellation invoice** (Stornorechnung, `kind: "cancellation"`): cancels
+a sent, unpaid invoice with a number of its own and the same lines counted
+negative; it names the invoice it cancels (`cancels`, `original`), which
+is then **cancelled**. _Avoid_: Gutschrift, which in German tax law is an
+invoice the customer writes.
+
+**Due date**: the invoice date plus the days to pay. A sent invoice past it
+is **overdue**. **Open invoices**: sent and not paid.
+
+**VAT status** (`vatStatus`): per year, Kleinunternehmer (§ 19 UStG, the
+default) or charging VAT (Regelbesteuerung, not built yet). The year of
+the service decides (for a period, the year it ends). A Kleinunternehmer's invoice carries the **§ 19
+note**: "Gemäß § 19 UStG wird keine Umsatzsteuer berechnet."

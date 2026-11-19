@@ -1,0 +1,212 @@
+/* The invoice page (invoice-html.mjs): A4, black on white, in the shape of
+   a German business letter (DIN 5008): the address in the envelope window
+   45 mm from the top, the invoice facts beside it, the business details
+   at the foot of the page (of the last one, when it takes more). On
+   screen it is a sheet of paper (the preview); Chromium prints it to the
+   PDF. Noto Sans is Omarchy's sans-serif. */
+
+@page {
+  size: A4;
+  margin: 15mm 18mm 12mm 20mm;
+}
+
+:root {
+  color-scheme: light;
+}
+
+html {
+  background: #8a8f99;
+}
+
+body {
+  margin: 0;
+  padding: 24px 0;
+  color: #111;
+  font: 9.5pt/1.45 "Noto Sans", "Liberation Sans", "DejaVu Sans", Arial, sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+
+.invoice {
+  position: relative;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  width: 210mm;
+  min-height: 297mm;
+  margin: 0 auto;
+  padding: 15mm 18mm 12mm 20mm;
+  background: #fff;
+  box-shadow: 0 2px 12px rgb(0 0 0 / 0.35);
+}
+
+.letterhead {
+  height: 30mm;
+}
+
+.letterhead .from {
+  font-size: 16pt;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10mm;
+  min-height: 45mm;
+}
+
+.window {
+  width: 85mm;
+}
+
+.return {
+  font-size: 7pt;
+  color: #555;
+  border-bottom: 0.5pt solid #999;
+  padding-bottom: 1mm;
+  margin-bottom: 3mm;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+address {
+  font-style: normal;
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: max-content max-content;
+  gap: 0.6mm 5mm;
+  margin: 5mm 0 0;
+  align-content: start;
+}
+
+.facts dt {
+  color: #555;
+}
+
+.facts dd {
+  margin: 0;
+  text-align: right;
+}
+
+h1 {
+  font-size: 14pt;
+  font-weight: 600;
+  margin: 8mm 0 4mm;
+}
+
+p {
+  margin: 0 0 3mm;
+}
+
+table.items {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 4mm 0 5mm;
+}
+
+.items th,
+.items td {
+  padding: 1.6mm 2mm;
+  text-align: left;
+  vertical-align: top;
+}
+
+.items thead th {
+  font-weight: 600;
+  border-bottom: 0.75pt solid #111;
+}
+
+.items tbody td {
+  border-bottom: 0.5pt solid #ccc;
+}
+
+.items tbody tr {
+  break-inside: avoid;
+}
+
+.items .pos {
+  width: 9mm;
+  padding-left: 0;
+}
+
+.items .num {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.items td.num:last-child,
+.items th.num:last-child {
+  padding-right: 0;
+}
+
+.items tfoot td {
+  padding-top: 1.2mm;
+  padding-bottom: 1.2mm;
+}
+
+.items tfoot td:first-child {
+  text-align: right;
+}
+
+.items tfoot tr.total td {
+  font-weight: 600;
+  font-size: 10.5pt;
+  border-top: 0.75pt solid #111;
+  border-bottom: 1.5pt double #111;
+}
+
+.vat-note {
+  font-weight: 600;
+}
+
+footer {
+  margin-top: auto;
+  display: grid;
+  grid-template-columns: 1fr 1fr 1.3fr;
+  gap: 6mm;
+  padding-top: 2.5mm;
+  border-top: 0.5pt solid #999;
+  font-size: 7.5pt;
+  line-height: 1.4;
+  color: #444;
+}
+
+/* A draft in the preview: not the invoice yet. */
+.invoice.draft::before {
+  content: "Entwurf";
+  position: absolute;
+  top: 110mm;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 96pt;
+  font-weight: 700;
+  color: rgb(0 0 0 / 0.06);
+  transform: rotate(-24deg);
+  pointer-events: none;
+}
+
+@media print {
+  html,
+  body {
+    background: #fff;
+    padding: 0;
+  }
+
+  /* The page's height less its margins, and a little room for rounding,
+     so a short invoice has its footer at the foot of its one page. */
+  .invoice {
+    width: auto;
+    min-height: 266mm;
+    padding: 0;
+    box-shadow: none;
+  }
+
+  footer {
+    break-inside: avoid;
+  }
+}

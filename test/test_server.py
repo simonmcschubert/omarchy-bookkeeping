@@ -46,7 +46,7 @@ class ServerTest(unittest.TestCase):
         self.assertEqual(response.status, 200)
         self.assertIn(b"Bookkeeping", body)
         self.assertIn("script-src 'self'", response.getheader("Content-Security-Policy"))
-        for path in ("/app.mjs", "/books.mjs", "/import.mjs", "/backup.mjs", "/assets.mjs", "/assets-view.mjs", "/einvoice.mjs", "/style.css", "/einvoice.css", "/icon.svg"):
+        for path in ("/app.mjs", "/books.mjs", "/import.mjs", "/backup.mjs", "/assets.mjs", "/assets-view.mjs", "/einvoice.mjs", "/style.css", "/einvoice.css", "/icon.svg", "/invoices.mjs", "/invoices-view.mjs", "/invoice-html.mjs", "/invoice-xml.mjs", "/invoice.css"):
             self.assertEqual(self.request("GET", path)[0].status, 200, path)
 
     def test_save_and_conflict(self):

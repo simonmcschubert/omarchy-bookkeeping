@@ -3,10 +3,11 @@
 Bookkeeping for a small business in Germany under the small-business VAT
 exemption (Kleinunternehmer, § 19 UStG), as an app for
 [Omarchy](https://omarchy.org/): income and expenses with their receipts,
-categories linked to the lines of the official EÜR form, analytics across
-all years, and each year's Einnahmenüberschussrechnung ready to type into
-ELSTER. Received e-invoices (XRechnung, ZUGFeRD) become expenses, and years
-of old spreadsheets come in through a CSV import. No account and no sync:
+invoices as ZUGFeRD e-invoices, categories linked to the lines of the
+official EÜR form, analytics across all years, and each year's
+Einnahmenüberschussrechnung ready to type into ELSTER. Received e-invoices
+(XRechnung, ZUGFeRD) become expenses, and years of old spreadsheets come in
+through a CSV import. No account and no sync:
 everything stays on this computer, plus, if set up, a nightly copy on
 another computer of your own.
 
@@ -18,7 +19,8 @@ window in the app launcher. Colors follow the current Omarchy theme.
 ## Install
 
 Needs Omarchy, Python 3.11 or newer, and Chromium (Omarchy's default
-browser).
+browser). Invoice PDFs also need Java and pikepdf, which `setup` installs
+(see [Invoices](#invoices)).
 
 ```bash
 git clone https://github.com/simonmcschubert/omarchy-bookkeeping.git ~/.local/share/omarchy-bookkeeping
@@ -27,11 +29,15 @@ git clone https://github.com/simonmcschubert/omarchy-bookkeeping.git ~/.local/sh
 
 `setup` adds a user service (`omarchy-bookkeeping.service`) that runs the
 server at login on `http://127.0.0.1:47221/`, and a "Bookkeeping" entry in
-the app launcher (`Super+Space`). The server reads the code from the cloned
-directory, so keep it where it is. It updates itself: see
-[Update](#update). `setup --remove` takes the service and the launcher entry
-out; the data stays. `setup --backup` sets up the nightly copy to another
-computer (see [Backup](#backup)).
+the app launcher (`Super+Space`). For invoices it installs Java
+(`jre-openjdk-headless`) and pikepdf (`python-pikepdf`) with pacman, asking
+for sudo only when one is missing, and downloads the Mustang validator
+(one Java file, about 60 MB, checked against its SHA-256) into `tools/`.
+The server reads the code from the cloned directory, so keep it where it
+is. It updates itself: see [Update](#update). `setup --remove` takes the
+service, the launcher entry and `tools/` out; the data stays. `setup
+--backup` sets up the nightly copy to another computer (see
+[Backup](#backup)).
 
 ## Update
 
@@ -40,9 +46,10 @@ every four hours. The update button, a circle of arrows at the right end of
 the top bar, checks now when clicked; hover it to see the installed version.
 When there is a release, the button turns into a down arrow with **Update**.
 One click downloads and installs it: Bookkeeping waits for any change still
-being saved, restarts its server with the release and reloads the window. A
-window with an entry open in the form reloads only once the entry is saved
-or cancelled, and says **Updated** meanwhile; so does a window open while
+being saved or an invoice PDF still being made, restarts its server with
+the release and reloads the window. A window with a form open (an entry, an
+asset, an invoice or a customer) reloads only once it is saved or
+cancelled, and says **Updated** meanwhile; so does a window open while
 another one, or a terminal, installs an update. A
 release downloaded otherwise (`update download` in a terminal, or a window
 closed while it downloaded) shows **Restart to update** instead, which
@@ -93,14 +100,18 @@ the service or the launcher entry.
 ## Views
 
 - **Overview**: the year's income, expenses (with the year's AfA), profit
-  and how close the revenue is to the Kleinunternehmer limit; profit per year since the first
-  entry (click a year to open it); the year by month; income and expenses by
-  category.
+  and how close the revenue is to the Kleinunternehmer limit; the open
+  invoices (sent, not paid) and which are overdue; profit per year since the
+  first entry (click a year to open it); the year by month; income by
+  category and by customer; expenses by category.
 - **Entries**: every income and expense of a year, newest first, with its
   category, the EÜR line it counts on, and its receipt file (PDF, photo or
-  e-invoice XML). Income gets the next running number by itself. A receipt
-  or e-invoice dropped on the page becomes a new expense. An expense that is
-  really an asset becomes one with **Make it an asset**.
+  e-invoice XML). Income gets the next running number by itself, and can
+  name its customer. A receipt or e-invoice dropped on the page becomes a new
+  expense. An expense that is really an asset becomes one with **Make it an
+  asset**.
+- **Invoices**: the year's invoices with their status (draft, sent,
+  overdue, paid, cancelled) and PDF, and the customers.
 - **Assets**: what was bought to last more than a year, such as a laptop or
   a desk, with its cost, useful life, receipt and, later, the day it went
   and its price; for each, how it is written off and its book value at the
@@ -113,8 +124,9 @@ the service or the launcher entry.
   by activity, and the profit filed with the tax office, to check the entries
   against it.
 - **Settings**: categories and their EÜR lines, the line numbers of each
-  year's form, the import, the business details, the backup (when the last
-  copy to another computer was made), and which updates to offer.
+  year's form, the import, the business details, the VAT status of each
+  year, the backup (when the last copy to another computer was made), and
+  which updates to offer.
 
 ![EÜR](docs/euer.png)
 
@@ -163,6 +175,53 @@ the same year.
 
 **Close year**, after filing, keeps the year's entries from being changed by
 mistake; **Reopen year** allows it again.
+
+## Invoices
+
+![Invoices](docs/invoices.png)
+
+An invoice starts as a draft: a customer, the invoice date, the date or
+period of the service, lines (what, quantity, unit, price), the days to
+pay, and the category its income counts on. A preview shows the page as
+it will print. **Issue invoice** gives it the next running number and
+makes the PDF; from then on it can't change.
+
+The PDF is a [ZUGFeRD](https://www.ferd-net.de/) e-invoice (version 2.5.2,
+the same as Factur-X 1.09.2): a normal-looking invoice with the invoice
+data inside as XML (UN/CEFACT CII, profile EN 16931), so the customer's
+software can read it. It is made in three steps:
+
+1. Chromium prints the invoice page to a PDF.
+2. pikepdf, a Python library for editing PDFs, makes that PDF/A-3 (the
+   archive form of PDF that may carry such a file) and attaches the XML.
+3. The [Mustang](https://www.mustangproject.org/) validator, a Java
+   program, checks the PDF/A and the XML against the EN 16931 rules, as the
+   customer's software would.
+
+Only an invoice that passes is kept, like a receipt, in `receipts/`; the
+Invoices view shows the check's result and opens the PDF again.
+
+![Invoice PDF](docs/invoice-pdf.png)
+
+The page holds what § 14 Abs. 4 UStG asks for: both names and addresses,
+the Steuernummer, the dates of the invoice and the service, the number,
+the lines, the amount, and the note **Gemäß § 19 UStG wird keine
+Umsatzsteuer berechnet.** In the XML, a Kleinunternehmer's lines are
+tax-exempt (VAT category E) with the reason "Kein Ausweis von
+Umsatzsteuer, da Kleinunternehmer gemäß § 19 UStG", as KoSIT and FeRD
+write it.
+
+- **Mark paid** asks for the day the money came and adds the income on that
+  day (Zuflussprinzip), with the invoice's number, customer and PDF.
+  **Mark unpaid** takes it back.
+- **Cancel invoice** makes a cancellation invoice (Stornorechnung) with a
+  number of its own, the same lines counted negative and a reference to
+  the invoice it cancels; it is checked and kept the same way. A paid
+  invoice can't be cancelled yet (refunds are not built).
+- The VAT status is kept per year in **Settings › Business**:
+  Kleinunternehmer unless a year is set to charge VAT. The year of the
+  service decides (for a period, the year it ends). Invoices with VAT are not built yet: a year that charges
+  VAT can't issue one.
 
 ## Received e-invoices
 
@@ -221,9 +280,9 @@ years go in by hand on the EÜR page.
   receipt files, in a directory only its owner can open
 - `…/backups/`: a copy of that file from before the first change of each
   day, the last 60 days
-- `…/receipts/`: receipt files, named by their content and never changed.
-  XML files are served as plain text; the page shows e-invoices as the
-  server reads them (`einvoice_reader.py`)
+- `…/receipts/`: receipt files and invoice PDFs, named by their content and
+  never changed. XML files are served as plain text; the page shows
+  e-invoices as the server reads them (`einvoice_reader.py`)
 - `…/backup-status`: the result of the last backup;
   `~/.config/omarchy-bookkeeping/backup.conf`: where it goes
 
@@ -275,8 +334,8 @@ To go back to an earlier version, copy it from the server over
 
 ## Not built yet
 
-- Invoices as ZUGFeRD e-invoices (a normal PDF with the invoice data inside),
-  marked paid to become income
+- Invoices with VAT (Regelbesteuerung), and the VAT in the EÜR
+- Refunds of paid invoices
 - For assets: the declining-balance AfA for things bought from July 2025 to
   2027, special AfA (§ 7g), cars, things brought in from private property
   (Einlage), private use of an asset, and the Sammelposten
@@ -284,8 +343,8 @@ To go back to an earlier version, copy it from the server over
 ## Development
 
 ```bash
-node --test                               # app logic, import, backup status, update button, update script
-python3 -m unittest discover -s test -v   # server, backup script, setup --backup, updates.py
+node --test                               # app logic, import, invoices, backup status, update button, update script
+python3 -m unittest discover -s test -v   # server, invoice PDFs, backup script, setup --backup, updates.py
 python3 server.py --port 47321 --data /tmp/books.json   # try it
 python3 test/einvoice_samples.py          # rewrites the sample e-invoices
 ```
@@ -293,11 +352,19 @@ python3 test/einvoice_samples.py          # rewrites the sample e-invoices
 `test/fixtures/einvoices/` holds made-up e-invoices (XRechnung in UBL and
 CII, a credit note, a ZUGFeRD PDF) to drop on the Entries page.
 
+Without Chromium, Java, pikepdf or `tools/mustang-cli.jar`, the tests that
+make real invoice PDFs are skipped. `BOOKKEEPING_CHROMIUM`,
+`BOOKKEEPING_JAVA` and `BOOKKEEPING_MUSTANG` point the server at other
+copies, and `BOOKKEEPING_CHROMIUM_NO_SANDBOX=1` runs Chromium without its
+sandbox where the system blocks it (Ubuntu, CI).
+
 The app is plain JavaScript modules and a Python standard-library server
-(e-invoices too, PDFs included); no build step. `CONTEXT.md` lists the words the code uses.
+(reading e-invoices too, PDFs included; making invoice PDFs needs the tools
+above); no build step. `CONTEXT.md` lists the words the code uses.
 
 ```text
-server.py          # page, /api/data, receipts, daily backups, /theme.css, /api/backup, /api/einvoice, /api/update
+server.py          # page, /api/data, receipts, daily backups, /theme.css, /api/backup, /api/einvoice, /api/invoices, /api/update
+invoice_pdf.py     # makes invoice PDFs (Chromium, pikepdf) and has Mustang check them
 einvoice_reader.py # reads received e-invoices (XML or ZUGFeRD PDF)
 updates.py         # the Updater behind /api/update: runs the update script
 update             # finds, downloads and installs releases or previews
@@ -308,10 +375,14 @@ app/
 ├── assets.mjs     # assets and their AfA (no DOM)
 ├── assets-view.mjs # the Assets view and the asset parts of the EÜR
 ├── einvoice.mjs   # received e-invoices: the expense and the readable view (no DOM)
+├── invoices.mjs   # customers and invoices: issue, paid, cancel, open (no DOM)
+├── invoice-xml.mjs # an invoice's ZUGFeRD XML (no DOM)
+├── invoice-html.mjs # an invoice's printed page, with invoice.css (no DOM)
+├── invoices-view.mjs # the Invoices view and its Overview cards
 ├── import.mjs     # the spreadsheet import (no DOM)
 ├── backup.mjs     # the backup's status (no DOM)
 └── update.mjs     # the update button, and the channel in Settings › Updates
-setup              # user service, launcher entry and backup timer; --remove undoes
+setup              # user service, launcher entry, backup timer and invoice tools; --remove undoes
 ```
 
 The update button, `updates.py`, `update` and the Release and Preview
