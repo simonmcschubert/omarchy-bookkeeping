@@ -72,3 +72,14 @@ test("the channel choice says what is installed, or why it can't switch", () => 
   assert.equal(channelNote(server({}), { busy: false, error: "can't change the channel while Bookkeeping updates; try again when it is done" }),
     "Can't change the channel while Bookkeeping updates; try again when it is done.");
 });
+
+test("an installed update waits for the open entry before the page reloads", () => {
+  const waiting = { ...idle, reload: true };
+  assert.deepEqual(updateButton(server({ installed: "0.2.0" }), waiting), {
+    icon: "restart", text: "Updated", tone: "accent",
+    tip: "Bookkeeping 0.2.0 is installed. This window reloads with it once the open entry is saved or cancelled.",
+  });
+  assert.equal(updateButton(server({ installed: "" }), waiting).tip,
+    "A new version of Bookkeeping is installed. This window reloads with it once the open entry is saved or cancelled.");
+});
+

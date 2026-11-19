@@ -21,10 +21,16 @@ export function updateName(version) {
 
 // What the button shows: icon, text, tone (accent, red or none), tip, and
 // busy (the icon turns). server is GET /api/update (null before the first
-// answer); asked is the last check the button asked for.
+// answer); asked is the last check the button asked for, and reload is set
+// while an installed update waits for the open entry before the page
+// reloads.
 export function updateButton(server, asked) {
   const s = server ?? { status: "", version: "", error: "", installed: "", channel: "", checking: false };
   const name = `Bookkeeping ${updateName(s.version)}`;
+  if (asked.reload) {
+    return { icon: "restart", text: "Updated", tone: "accent",
+      tip: `${s.installed ? `Bookkeeping ${s.installed}` : "A new version of Bookkeeping"} is installed. This window reloads with it once the open entry is saved or cancelled.` };
+  }
   switch (s.status) {
     case "available":
       return { icon: "download", text: "Update", tone: "accent",
@@ -90,12 +96,14 @@ function icon(name) {
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // Shows the button in root. saving() tells whether the page has a change
-// on its way to the server: a restart waits for it. Returns
+// on its way to the server: a restart waits for it. editing() tells whether
+// the page holds a change only it knows (an entry open in the editor): the
+// reload after an update waits for it, so the change is not lost. Returns
 // channelSettings(), the channel choice for Settings, which this keeps up
 // to date.
-export function startUpdates(root, { saving }) {
+export function startUpdates(root, { saving, editing = () => false }) {
   let server = null;
-  const asked = { checking: false, error: "", current: false };
+  const asked = { checking: false, error: "", current: false, reload: false };
   let confirmed = null;
   let restarting = false;
   const choosing = { busy: false, error: "" };
@@ -172,9 +180,7 @@ export function startUpdates(root, { saving }) {
     if (!json || restarting) return;
     if (server && json.boot !== server.boot && json.installed !== server.installed) {
       // Another window or a terminal installed a release: this page is old.
-      restarting = true;
-      while (saving()) await sleep(100);
-      location.reload();
+      await reload(json);
       return;
     }
     server = json;
@@ -247,8 +253,7 @@ export function startUpdates(root, { saving }) {
       await sleep(RESTART_POLL);
       const { json } = await call("GET");
       if (json?.boot && json.boot !== boot) {
-        while (saving()) await sleep(100);
-        location.reload();
+        await reload(json);
         return;
       }
       if (json) {
@@ -264,7 +269,24 @@ export function startUpdates(root, { saving }) {
     restarting = false;
   }
 
+  // Reloads the page from the new server json, once nothing would be lost.
+  // Until then the page keeps working with it: a save goes to the new
+  // server, which reads the same data.
+  async function reload(json) {
+    restarting = true;
+    server = json;
+    while (saving() || editing()) {
+      if (!asked.reload && editing()) {
+        asked.reload = true;
+        render();
+      }
+      await sleep(100);
+    }
+    location.reload();
+  }
+
   function act() {
+    if (asked.reload) return;
     const status = server?.status ?? "";
     if (status === "") check();
     else if (status === "available" || status === "failed") download();

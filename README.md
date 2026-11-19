@@ -41,6 +41,9 @@ the top bar, checks now when clicked; hover it to see the installed version.
 When there is a release, the button turns into a down arrow with **Update**.
 One click downloads and installs it: Bookkeeping waits for any change still
 being saved, restarts its server with the release and reloads the window. A
+window with an entry open in the form reloads only once the entry is saved
+or cancelled, and says **Updated** meanwhile; so does a window open while
+another one, or a terminal, installs an update. A
 release downloaded otherwise (`update download` in a terminal, or a window
 closed while it downloaded) shows **Restart to update** instead, which
 installs it the same way. When the new server does not answer, Bookkeeping

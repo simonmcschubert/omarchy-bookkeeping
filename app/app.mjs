@@ -1443,7 +1443,7 @@ function drawUpdates() {
 // ---- start
 
 setUpDrop();
-const updates = startUpdates(document.getElementById("update"), { saving: () => sending > 0 });
+const updates = startUpdates(document.getElementById("update"), { saving: () => sending > 0, editing: () => state.editing !== null });
 
 Promise.all([load(), loadBackup()])
   .then(() => {
