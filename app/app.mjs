@@ -34,7 +34,7 @@ import { aveurCard, drawAssets, editingAsset, printAssets, startAssetFromEntry }
 import { applyImport, planImport, readTable } from "./import.mjs";
 import { backupState } from "./backup.mjs";
 import { RECEIPT_ACCEPT, expenseFromInvoice, hasInvoiceView, invoiceSummary, invoiceView } from "./einvoice.mjs";
-import { REGULAR, forgetPayment, vatStatus } from "./invoices.mjs";
+import { REGULAR, forgetPayment, numberProblems, vatStatus } from "./invoices.mjs";
 import { customerField, customerIncomeCard, drawInvoices, editingInvoice, openInvoicesCard } from "./invoices-view.mjs";
 import { startUpdates } from "./update.mjs";
 
@@ -912,7 +912,7 @@ function saveEntry() {
   if (original?.imported) entry.imported = true;
   if (e.kind === "income" && e.customer) entry.customer = e.customer;
   if (original?.invoice) entry.invoice = original.invoice; // the invoice it paid
-  const problems = entryProblems(state.data, entry);
+  const problems = [...entryProblems(state.data, entry), ...numberProblems(state.data, entry)];
   if (original && isClosed(state.data, Number(original.date.slice(0, 4)))) problems.push("Its year is closed.");
   if (problems.length) {
     state.editorProblems = problems;

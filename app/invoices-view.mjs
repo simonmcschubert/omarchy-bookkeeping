@@ -328,6 +328,7 @@ function previewHtml(ui, draft) {
 
 function cancelEdit(ui) {
   const s = local(ui);
+  if (s.busy) return; // its PDF is being made: keeping it closes the form
   s.editing = null;
   s.customer = null;
   s.problems = [];
@@ -422,9 +423,15 @@ async function issueWithPdf(ui, issued, onProblem, onKept) {
   const pdf = { file: result.body.file, name: invoiceFileName(issued) };
   const validation = keptValidation(ui, result.body.validation);
   onKept();
-  ui.change((data) => {
+  await ui.change((data) => {
     issueInvoice(data, issued, { pdf, validation, today: ui.todayIso() });
   });
+  // A save that met a change from another window shows that version
+  // instead, without this invoice: then it is not issued.
+  if (!(ui.state.data.invoices ?? []).some((i) => i.id === issued.id && i.status !== "draft")) {
+    onProblem(["Not issued: the data changed in another window meanwhile. Issue it again."], null);
+    return null;
+  }
   return issued;
 }
 
@@ -444,10 +451,12 @@ async function issue(ui) {
     ui.render();
     return;
   }
+  const form = s.editing;
   const done = await issueWithPdf(
     ui,
     issued,
     (problems, report) => {
+      s.editing ??= form; // back, as typed, when it was not kept
       s.problems = problems;
       s.report = report;
       ui.render();
@@ -577,6 +586,7 @@ async function cancelInvoice(ui, invoice) {
     ui,
     issued,
     (p, report) => {
+      s.open = invoice.id;
       s.problems = p;
       s.report = report;
       ui.render();

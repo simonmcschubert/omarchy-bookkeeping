@@ -272,6 +272,16 @@ export function issueInvoice(data, issued, { pdf, validation, today }) {
   return invoice;
 }
 
+/** Why an income entry can't have its number: an issued invoice owns it
+ *  before it is paid, so no other income may take it. */
+export function numberProblems(data, entry) {
+  if (entry.kind !== "income" || !Number.isInteger(entry.number)) return [];
+  const holder = (data.invoices ?? []).find((i) => i.number === entry.number && i.id !== entry.invoice);
+  if (!holder) return [];
+  const open = holder.kind === "invoice" && holder.status === "sent" ? ", which is open: mark it paid in Invoices instead" : "";
+  return [`No. ${entry.number} is the number of invoice ${entry.number}${open}. The next free number is ${nextNumber(data)}.`];
+}
+
 /** Why an invoice whose PDF was just made can't be kept after all, as the
  *  data may change while the PDF is made: its number was taken, or the
  *  invoice a cancellation cancels was paid or cancelled meanwhile. */

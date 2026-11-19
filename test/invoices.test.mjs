@@ -19,6 +19,7 @@ import {
   lineTotal,
   markPaid,
   markUnpaid,
+  numberProblems,
   openInvoices,
   parseQuantity,
   quantityInput,
@@ -203,6 +204,18 @@ test("paid before the invoice date: a prepayment counts on the day it came", () 
   const invoice = issue(data, data.invoices[0]);
   assert.deepEqual(markPaid(data, invoice.id, "01.11.2026"), []);
   assert.equal(data.entries.at(-1).date, "2026-11-01");
+});
+
+test("an issued invoice owns its number: no other income takes it", () => {
+  const data = sampleData();
+  data.invoices = [sampleDraft(data)];
+  const invoice = issue(data, data.invoices[0]);
+  const income = { id: "manual", kind: "income", date: "2026-11-20", amount: 5000, text: "x", category: "in-3", number: invoice.number, ref: "", receipt: null };
+  assert.match(numberProblems(data, income)[0], /No. 42 is the number of invoice 42, which is open: mark it paid in Invoices instead. The next free number is 43/);
+  assert.deepEqual(numberProblems(data, { ...income, number: 43 }), []);
+  // Its own payment keeps the number, also when edited later.
+  markPaid(data, invoice.id, "20.11.2026");
+  assert.deepEqual(numberProblems(data, data.entries.at(-1)), []);
 });
 
 test("a paid invoice is not cancelled here", () => {
