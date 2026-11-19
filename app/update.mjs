@@ -115,6 +115,10 @@ export function startUpdates(root, { saving, editing = () => false }) {
   const asked = { checking: false, error: "", current: false, reload: false };
   let confirmed = null;
   let restarting = false;
+  // The server this page's code came from (its first answer). An answer
+  // from a server that runs other code reloads the page (accept).
+  let loaded = null;
+  let reloading = false;
   const choosing = { busy: false, error: "" };
   let choice = null; // { buttons, note } of the choice on show in Settings
 
@@ -187,13 +191,22 @@ export function startUpdates(root, { saving, editing = () => false }) {
     if (restarting) return;
     const { json } = await call("GET");
     if (!json || restarting) return;
-    if (newCode(server, json)) {
-      // Another window or a terminal installed an update: this page is old.
-      await reload(json);
-      return;
+    if (accept(json)) render();
+  }
+
+  // Takes json, an answer of the server, as what the button shows. When the
+  // server runs other code than this page came from (another window or a
+  // terminal installed an update), reloads the page instead. Returns
+  // whether it took it.
+  function accept(json) {
+    if (reloading) return false;
+    loaded ??= json;
+    if (newCode(loaded, json)) {
+      reload(json);
+      return false;
     }
     server = json;
-    render();
+    return true;
   }
 
   async function check() {
@@ -203,7 +216,7 @@ export function startUpdates(root, { saving, editing = () => false }) {
     render();
     const { json, error } = await call("POST", { action: "check" });
     asked.checking = false;
-    if (json) server = json;
+    if (json && !accept(json)) return;
     found(error ?? json.checkError);
     render();
   }
@@ -231,7 +244,7 @@ export function startUpdates(root, { saving, editing = () => false }) {
     Object.assign(choosing, { busy: false, error: error ?? "" });
     asked.checking = false;
     if (json) {
-      server = json;
+      if (!accept(json)) return;
       found(json.checkError);
     }
     render();
@@ -243,7 +256,8 @@ export function startUpdates(root, { saving, editing = () => false }) {
     server = { ...server, status: "downloading" };
     render();
     const { json, error } = await call("POST", { action: "download" });
-    server = json ?? { ...server, status: "failed", error: `can't download Bookkeeping ${server.version}: ${error}` };
+    if (json && !accept(json)) return;
+    if (!json) server = { ...server, status: "failed", error: `can't download Bookkeeping ${server.version}: ${error}` };
     if (server.status === "downloaded") return install();
     render();
   }
@@ -256,7 +270,7 @@ export function startUpdates(root, { saving, editing = () => false }) {
     render();
     while (saving()) await sleep(100);
     const { json } = await call("POST", { action: "install" });
-    if (json) server = json;
+    if (json && !accept(json)) return;
     let misses = 0;
     while (server.status === "installing") {
       await sleep(RESTART_POLL);
@@ -282,7 +296,8 @@ export function startUpdates(root, { saving, editing = () => false }) {
   // Until then the page keeps working with it: a save goes to the new
   // server, which reads the same data.
   async function reload(json) {
-    restarting = true;
+    if (reloading) return;
+    reloading = restarting = true;
     server = json;
     while (saving() || editing()) {
       if (!asked.reload && editing()) {
@@ -295,7 +310,7 @@ export function startUpdates(root, { saving, editing = () => false }) {
   }
 
   function act() {
-    if (asked.reload) return;
+    if (reloading) return;
     const status = server?.status ?? "";
     if (status === "") check();
     else if (status === "available" || status === "failed") download();
