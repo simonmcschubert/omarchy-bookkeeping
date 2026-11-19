@@ -22,14 +22,14 @@ export function updateName(version) {
 // What the button shows: icon, text, tone (accent, red or none), tip, and
 // busy (the icon turns). server is GET /api/update (null before the first
 // answer); asked is the last check the button asked for, and reload is set
-// while an installed update waits for the open entry before the page
-// reloads.
+// while an installed update waits for the open entry or asset before the
+// page reloads.
 export function updateButton(server, asked) {
   const s = server ?? { status: "", version: "", error: "", installed: "", channel: "", checking: false };
   const name = `Bookkeeping ${updateName(s.version)}`;
   if (asked.reload) {
     return { icon: "restart", text: "Updated", tone: "accent",
-      tip: `${s.installed ? `Bookkeeping ${s.installed}` : "A new version of Bookkeeping"} is installed. This window reloads with it once the open entry is saved or cancelled.` };
+      tip: `${s.installed ? `Bookkeeping ${s.installed}` : "A new version of Bookkeeping"} is installed. This window reloads with it once the open entry or asset is saved or cancelled.` };
   }
   switch (s.status) {
     case "available":
@@ -106,10 +106,10 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // Shows the button in root. saving() tells whether the page has a change
 // on its way to the server: a restart waits for it. editing() tells whether
-// the page holds a change only it knows (an entry open in the editor): the
-// reload after an update waits for it, so the change is not lost. Returns
-// channelSettings(), the channel choice for Settings, which this keeps up
-// to date.
+// the page holds a change only it knows (an entry or asset open in its
+// form): the reload after an update waits for it, so the change is not
+// lost. Returns channelSettings(), the channel choice for Settings, which
+// this keeps up to date.
 export function startUpdates(root, { saving, editing = () => false }) {
   let server = null;
   const asked = { checking: false, error: "", current: false, reload: false };

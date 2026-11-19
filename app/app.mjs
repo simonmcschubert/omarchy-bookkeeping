@@ -30,7 +30,7 @@ import {
   yearTotals,
   years,
 } from "./books.mjs";
-import { aveurCard, drawAssets, printAssets, startAssetFromEntry } from "./assets-view.mjs";
+import { aveurCard, drawAssets, editingAsset, printAssets, startAssetFromEntry } from "./assets-view.mjs";
 import { applyImport, planImport, readTable } from "./import.mjs";
 import { backupState } from "./backup.mjs";
 import { RECEIPT_ACCEPT, expenseFromInvoice, hasInvoiceView, invoiceSummary, invoiceView } from "./einvoice.mjs";
@@ -1449,7 +1449,7 @@ function drawUpdates() {
 // ---- start
 
 setUpDrop();
-const updates = startUpdates(document.getElementById("update"), { saving: () => sending > 0, editing: () => state.editing !== null });
+const updates = startUpdates(document.getElementById("update"), { saving: () => sending > 0, editing: () => state.editing !== null || editingAsset() });
 
 Promise.all([load(), loadBackup()])
   .then(() => {
