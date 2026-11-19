@@ -15,11 +15,14 @@ import {
   invoiceTotals,
   issueInvoice,
   issuing,
+  keepProblems,
   lineTotal,
   markPaid,
   markUnpaid,
   openInvoices,
   parseQuantity,
+  quantityInput,
+  quantityText,
   splitAddress,
   vatStatus,
 } from "../app/invoices.mjs";
@@ -38,6 +41,10 @@ test("quantities and line amounts", () => {
   assert.equal(parseQuantity("-1"), -1);
   assert.equal(parseQuantity(""), null);
   assert.equal(parseQuantity("abc"), null);
+  // The form shows a quantity so that it reads back the same.
+  for (const q of [1000, 1000.5, 0.25, -2]) assert.equal(parseQuantity(quantityInput(q)), q);
+  assert.equal(quantityText(1000), "1.000");
+  assert.equal(quantityText(-1.5), "−1,5");
   assert.equal(lineTotal({ quantity: 1.5, price: 8000 }), 12000);
   assert.equal(lineTotal({ quantity: 1.5, price: 12345 }), 18518); // 185,175 € rounds up
   assert.equal(lineTotal({ quantity: 0.333, price: 100 }), 33);
@@ -172,6 +179,21 @@ test("cancelling: a cancellation invoice with its own number, counted negative",
   assert.match(cancelProblems(data, invoice)[0], /Only an issued invoice/);
   // Neither counts as open.
   assert.equal(openInvoices(data, "2026-12-31").rows.length, 0);
+});
+
+test("a cancellation is not kept when its invoice was paid while its PDF was made", () => {
+  const data = sampleData();
+  data.invoices = [sampleDraft(data)];
+  const invoice = issue(data, data.invoices[0]);
+  const storno = issuing(data, cancellationOf(data, invoice, "2026-11-20"), nextNumber(data));
+  assert.deepEqual(keepProblems(data, storno), []);
+  // Paid meanwhile: the payment takes no number, so only this check stops it.
+  assert.deepEqual(markPaid(data, invoice.id, "20.11.2026"), []);
+  assert.match(keepProblems(data, storno)[0], /Refunds of paid invoices are not built yet/);
+  // Its number taken meanwhile.
+  const next = issuing(data, sampleDraft(data, { id: "inv2" }), nextNumber(data));
+  issue(data, sampleDraft(data, { id: "inv3" }));
+  assert.match(keepProblems(data, next)[0], /was taken meanwhile/);
 });
 
 test("a paid invoice is not cancelled here", () => {

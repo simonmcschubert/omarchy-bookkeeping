@@ -127,5 +127,10 @@ test("a single service date, a draft, and a cancellation page", () => {
   assert.ok(storno.includes("<h1>Stornorechnung Nr. 43</h1>"));
   assert.ok(storno.includes("Die Rechnung Nr. 42 vom 19.11.2026 wird hiermit in voller Höhe storniert."));
   assert.ok(storno.includes("−1.020,00 €"));
+  // Its quantities are negative too, as in its XML: −2 × 450,00 € = −900,00 €.
+  assert.ok(storno.includes("−2 Tage"));
+  assert.ok(storno.includes("−1,5 Std."));
+  assert.ok(storno.includes("450,00 €"));
+  assert.ok(storno.includes("−900,00 €"));
   assert.doesNotMatch(storno, /Bitte überweisen/);
 });

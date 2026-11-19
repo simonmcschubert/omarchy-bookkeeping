@@ -21,13 +21,14 @@ import {
   invoicesOfYear,
   issueInvoice,
   issuing,
+  keepProblems,
   markPaid,
   markUnpaid,
   newInvoice,
   openInvoices,
   parseQuantity,
   paymentOf,
-  quantityText,
+  quantityInput,
 } from "./invoices.mjs";
 import { invoiceXml } from "./invoice-xml.mjs";
 
@@ -235,7 +236,7 @@ function editor(ui) {
           "tr",
           {},
           h("td", { class: "line-text" }, h("textarea", { rows: 1 + (String(item.text).match(/\n/g)?.length ?? 0), "aria-label": `Line ${i + 1}: what`, placeholder: "Workshop, 2 days", value: item.text, oninput: set((v) => (item.text = v)) })),
-          h("td", { class: "num" }, h("input", { class: "qty", inputmode: "decimal", "aria-label": `Line ${i + 1}: quantity`, value: typeof item.quantity === "number" ? quantityText(item.quantity) : item.quantity, oninput: set((v) => (item.quantity = v)) })),
+          h("td", { class: "num" }, h("input", { class: "qty", inputmode: "decimal", "aria-label": `Line ${i + 1}: quantity`, value: typeof item.quantity === "number" ? quantityInput(item.quantity) : item.quantity, oninput: set((v) => (item.quantity = v)) })),
           h("td", {}, h("select", { "aria-label": `Line ${i + 1}: unit`, onchange: set((v) => (item.unit = v)) }, UNITS.map((u) => h("option", { value: u.code, selected: u.code === item.unit, text: u.label })))),
           h("td", { class: "num" }, h("input", { class: "price", inputmode: "decimal", "aria-label": `Line ${i + 1}: price`, placeholder: "120,00", value: typeof item.price === "number" ? amountText(item.price) : item.price, oninput: set((v) => (item.price = v)) })),
           h("td", { class: "num" }, lineAmounts[i]),
@@ -413,8 +414,9 @@ async function issueWithPdf(ui, issued, onProblem, onKept) {
     onProblem([`No PDF: ${result.body.error ?? "the server did not answer"}`], null);
     return null;
   }
-  if (nextNumber(ui.state.data) !== issued.number) {
-    onProblem([`Number ${issued.number} was taken meanwhile (another window?). Issue it again.`], null);
+  const problems = keepProblems(ui.state.data, issued);
+  if (problems.length) {
+    onProblem(problems, null);
     return null;
   }
   const pdf = { file: result.body.file, name: invoiceFileName(issued) };
@@ -506,11 +508,11 @@ function details(ui, invoice) {
           class: "inline-form",
           onsubmit: (event) => {
             event.preventDefault();
-            pay(ui, invoice, s.payDate);
+            if (!s.busy) pay(ui, invoice, s.payDate);
           },
         },
         h("label", { class: "inline" }, "Paid on", h("input", { name: "paid", value: s.payDate, placeholder: "TT.MM.JJJJ", "aria-label": "Day the money came", oninput: (e) => (s.payDate = e.target.value) })),
-        h("button", { class: "primary", type: "submit" }, "Mark paid"),
+        h("button", { class: "primary", type: "submit", disabled: s.busy }, "Mark paid"),
         h("span", { class: "spacer" }),
         h("button", { type: "button", class: "danger", disabled: s.busy, onclick: () => cancelInvoice(ui, invoice) }, s.busy ? "Making the cancellation…" : "Cancel invoice…"),
       ),

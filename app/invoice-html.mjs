@@ -93,13 +93,16 @@ export function invoiceHtml(invoice, { draft = false } = {}) {
     seller.vatId ? ["USt-IdNr.", seller.vatId] : null,
     buyer.vatId ? ["Ihre USt-IdNr.", buyer.vatId] : null,
   ].filter(Boolean);
+  // A cancellation counts its lines negative: −2 Tage × 450,00 € = −900,00 €,
+  // as its XML has them (BT-129).
+  const sign = invoice.kind === "cancellation" ? -1 : 1;
   const rows = totals.lines
     .map(
       (line, i) => `
       <tr>
         <td class="pos">${i + 1}</td>
         <td class="text">${lines(line.text)}</td>
-        <td class="num">${escapeHtml(quantityText(line.quantity))} ${escapeHtml(unitText(line))}</td>
+        <td class="num">${escapeHtml(quantityText(sign * line.quantity))} ${escapeHtml(unitText(line))}</td>
         <td class="num">${escapeHtml(euro(line.price))}</td>
         <td class="num">${escapeHtml(euro(line.amount))}</td>
       </tr>`,

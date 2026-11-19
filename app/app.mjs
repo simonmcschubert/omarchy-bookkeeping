@@ -1158,7 +1158,8 @@ function drawCategories() {
     h("option", { value: "", selected: !value, text: "No EÜR line" }),
     ...state.data.groups.filter((g) => g.kind === kind && !isComputedGroup(g.id)).map((g) => h("option", { value: g.id, selected: g.id === value, text: g.label })),
   ];
-  const used = new Set(state.data.entries.map((e) => e.category));
+  // Invoices too: an issued one can't change, and counts on its category when paid.
+  const used = new Set([...state.data.entries, ...(state.data.invoices ?? [])].map((x) => x.category));
   const categoryRows = (kind) =>
     state.data.categories
       .filter((c) => c.kind === kind)

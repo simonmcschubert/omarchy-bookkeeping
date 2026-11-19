@@ -9,7 +9,7 @@
 // own. Marking it paid adds the income entry on the day the money came
 // (Zuflussprinzip), with the invoice PDF as its receipt.
 
-import { categoryById, entryProblems, newId, parseDate } from "./books.mjs";
+import { categoryById, entryProblems, newId, nextNumber, parseDate } from "./books.mjs";
 
 // The note a Kleinunternehmer's invoice carries instead of the VAT, in the
 // wording Simon has always used. Since 2025, § 34a Satz 1 Nr. 5 UStDV asks
@@ -94,9 +94,15 @@ export function parseQuantity(text) {
 
 const QUANTITY = new Intl.NumberFormat("de-DE", { maximumFractionDigits: 3 });
 
-/** "1,5" */
+/** "1,5", "1.000", "−2" */
 export function quantityText(quantity) {
-  return QUANTITY.format(quantity ?? 0);
+  return QUANTITY.format(quantity ?? 0).replace("-", "−");
+}
+
+/** "1000,5" for the form: no thousands dots, which parseQuantity would
+ *  read as a decimal point. */
+export function quantityInput(quantity) {
+  return String(quantity ?? "").replace(".", ",");
 }
 
 function roundHalfAway(value) {
@@ -263,6 +269,16 @@ export function issueInvoice(data, issued, { pdf, validation, today }) {
     }
   }
   return invoice;
+}
+
+/** Why an invoice whose PDF was just made can't be kept after all, as the
+ *  data may change while the PDF is made: its number was taken, or the
+ *  invoice a cancellation cancels was paid or cancelled meanwhile. */
+export function keepProblems(data, issued) {
+  if (nextNumber(data) !== issued.number) return [`Number ${issued.number} was taken meanwhile (another window?). Issue it again.`];
+  if (issued.kind !== "cancellation") return [];
+  const original = (data.invoices ?? []).find((i) => i.id === issued.cancels);
+  return original ? cancelProblems(data, original) : ["The invoice it cancels is gone."];
 }
 
 /** The cancellation invoice (Stornorechnung) of an issued, unpaid
