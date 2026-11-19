@@ -213,9 +213,14 @@ export function assetsInYear(data, year) {
   return { rows, lines, writeOff, expenses: writeOff + lines["remaining-value"], sales: lines["asset-sales"] };
 }
 
-/** The years an asset was bought or went in. */
-export function assetDates(data) {
-  return (data.assets ?? []).flatMap((a) => [yearOfDate(a.date), ...(a.disposal ? [yearOfDate(a.disposal.date)] : [])]);
+/** The years assets were bought or went in, and the years between with
+ *  their AfA up to `until`. */
+export function assetDates(data, until) {
+  return (data.assets ?? []).flatMap((a) => [
+    yearOfDate(a.date),
+    ...(a.disposal ? [yearOfDate(a.disposal.date)] : []),
+    ...assetYears(a).filter((y) => y <= until),
+  ]);
 }
 
 // ---- Anlage AVEÜR
@@ -226,7 +231,6 @@ export function assetDates(data) {
 // 2026 form (of 01.09.2026) has the same lines. The
 // Anleitung: "Die Anlage AVEÜR ist Bestandteil der Anlage EÜR und mit
 // dieser an das Finanzamt zu übermitteln." GWG don't go in it.
-export const AVEUR_FORM_YEAR = 2025;
 export const AVEUR = [
   {
     id: "intangible",

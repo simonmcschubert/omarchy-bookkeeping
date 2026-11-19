@@ -20,7 +20,7 @@ import {
   netCost,
   treatment,
 } from "./assets.mjs";
-import { amountText, dateText, duplicateKey, euro, groupById, lineFor, newId, parseAmount, parseDate } from "./books.mjs";
+import { amountText, dateText, duplicateKey, euro, groupById, isClosed, lineFor, newId, parseAmount, parseDate } from "./books.mjs";
 
 // The asset in the form: a copy with the typed text, `isNew` when new.
 let draft = null;
@@ -44,7 +44,6 @@ export function startAssetFromEntry(entry, isNew) {
     goneDate: "",
     gonePrice: "",
     fromEntry: isNew ? null : entry.id,
-    entryKey: duplicateKey({ ...entry, date: parseDate(entry.date) ?? entry.date, amount: typeof entry.amount === "number" ? entry.amount : parseAmount(entry.amount) }),
   };
   problems = [];
   show = "all";
@@ -119,6 +118,12 @@ function save(ui) {
   const asset = fromDraft(draft);
   const original = ui.state.data.assets?.find((a) => a.id === asset.id) ?? null;
   problems = assetProblems(ui.state.data, asset, original);
+  // The expense it replaces, as saved: it must still be there and open, and
+  // it keeps its key, so importing its row again doesn't bring it back.
+  const source = draft.fromEntry ? ui.state.data.entries.find((e) => e.id === draft.fromEntry) : null;
+  if (draft.fromEntry && !source) problems.push("The expense entry it came from is gone.");
+  else if (source && isClosed(ui.state.data, Number(source.date.slice(0, 4)))) problems.push(`The expense entry is in ${source.date.slice(0, 4)}, which is closed.`);
+  else if (source) asset.entryKey = duplicateKey(source);
   if (problems.length) {
     ui.render();
     return;

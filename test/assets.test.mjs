@@ -163,6 +163,12 @@ test("the years list holds the years assets came and went", () => {
   const data = emptyData();
   data.assets = [{ ...desk, date: "2023-03-01", disposal: { date: "2024-05-01", price: 0 } }];
   assert.deepEqual(years(data, new Date("2026-11-19")), [2026, 2024, 2023]);
+  // A year with only AfA is there too, but not the years still to come.
+  data.assets = [{ ...desk, date: "2023-03-01" }];
+  assert.deepEqual(years(data, new Date("2026-11-19")), [2026, 2025, 2024, 2023]);
+  // A purchase dated next year is there as well.
+  data.assets.push({ ...desk, name: "Shelf", date: "2027-02-01" });
+  assert.deepEqual(years(data, new Date("2026-11-19")), [2027, 2026, 2025, 2024, 2023]);
 });
 
 test("checks before saving, and closed years", () => {

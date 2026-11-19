@@ -234,7 +234,7 @@ export function years(data, now = new Date()) {
   const set = new Set(data.entries.map(yearOf));
   set.add(now.getFullYear());
   for (const y of Object.keys(data.homeOffice ?? {})) set.add(Number(y));
-  for (const y of assetDates(data)) set.add(y);
+  for (const y of assetDates(data, now.getFullYear())) set.add(y);
   return [...set].sort((a, b) => b - a);
 }
 
