@@ -73,7 +73,7 @@ test("the channel choice says what is installed, or why it can't switch", () => 
     "Can't change the channel while Bookkeeping updates; try again when it is done.");
 });
 
-test("an installed update waits for the open entry or asset before the page reloads", () => {
+test("the button says an installed update waits for the open entry or asset", () => {
   const waiting = { ...idle, reload: true };
   assert.deepEqual(updateButton(server({ installed: "0.2.0" }), waiting), {
     icon: "restart", text: "Updated", tone: "accent",

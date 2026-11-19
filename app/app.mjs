@@ -166,10 +166,11 @@ async function save() {
     });
     const body = await response.json();
     if (response.status === 409) {
-      // Saved by a newer version in another window: this page can't open it.
-      // Reloaded, it gets that version's code, or says why it can't.
-      if (unreadable(body.data)) {
-        location.reload();
+      // Saved by a newer version of Bookkeeping: this page can't open that
+      // file, so it keeps what it shows (open forms too), unsaved.
+      const problem = unreadable(body.data);
+      if (problem) {
+        toast(`Not saved: the data file changed, and ${problem}`, "bad");
         return;
       }
       state.revision = body.revision;
