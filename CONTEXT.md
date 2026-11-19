@@ -157,5 +157,5 @@ is **overdue**. **Open invoices**: sent and not paid.
 
 **VAT status** (`vatStatus`): per year, Kleinunternehmer (§ 19 UStG, the
 default) or charging VAT (Regelbesteuerung, not built yet). The year of
-the service decides. A Kleinunternehmer's invoice carries the **§ 19
+the service decides (for a period, the year it ends). A Kleinunternehmer's invoice carries the **§ 19
 note**: "Gemäß § 19 UStG wird keine Umsatzsteuer berechnet."

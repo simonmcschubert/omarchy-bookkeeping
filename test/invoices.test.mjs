@@ -78,6 +78,8 @@ test("the VAT status is per year, Kleinunternehmer unless set", () => {
   const problems = invoiceProblems(data, sampleDraft(data, { date: "2027-01-05", service: { from: "2027-01-04", to: "" } }));
   assert.match(problems.join(" "), /not built yet/);
   assert.deepEqual(invoiceProblems(data, sampleDraft(data, { date: "2027-01-05", service: { from: "2026-12-20", to: "" } })), []);
+  // A period: its end decides, the day the service was completed.
+  assert.match(invoiceProblems(data, sampleDraft(data, { date: "2027-01-05", service: { from: "2026-12-15", to: "2027-01-04" } })).join(" "), /2027 charges VAT/);
 });
 
 test("addresses split for the e-invoice", () => {
@@ -127,7 +129,6 @@ test("paid: the income entry on the day of payment, with the PDF as receipt", ()
   const data = sampleData();
   data.invoices = [sampleDraft(data)];
   const invoice = issue(data, data.invoices[0]);
-  assert.match(markPaid(data, invoice.id, "01.11.2026")[0], /before the invoice date/);
   assert.deepEqual(markPaid(data, invoice.id, "05.01.2027"), []);
   const entry = data.entries.at(-1);
   assert.equal(entry.date, "2027-01-05"); // Zuflussprinzip: the year the money came
@@ -194,6 +195,14 @@ test("a cancellation is not kept when its invoice was paid while its PDF was mad
   const next = issuing(data, sampleDraft(data, { id: "inv2" }), nextNumber(data));
   issue(data, sampleDraft(data, { id: "inv3" }));
   assert.match(keepProblems(data, next)[0], /was taken meanwhile/);
+});
+
+test("paid before the invoice date: a prepayment counts on the day it came", () => {
+  const data = sampleData();
+  data.invoices = [sampleDraft(data)];
+  const invoice = issue(data, data.invoices[0]);
+  assert.deepEqual(markPaid(data, invoice.id, "01.11.2026"), []);
+  assert.equal(data.entries.at(-1).date, "2026-11-01");
 });
 
 test("a paid invoice is not cancelled here", () => {

@@ -37,7 +37,8 @@ export const DEFAULT_TERMS = 14; // days to pay
 
 /** The VAT status of a year: Kleinunternehmer unless Settings say it
  *  charges VAT. The year of the service decides, as it is the supply that
- *  is taxed or exempt (Leistungszeitpunkt), not the invoice. */
+ *  is taxed or exempt (Leistungszeitpunkt), not the invoice: for a period,
+ *  its end, as a service counts as done when completed (UStAE 13.1 Abs. 3). */
 export function vatStatus(data, year) {
   return data.vatStatus?.[year] === REGULAR ? REGULAR : KLEINUNTERNEHMER;
 }
@@ -163,7 +164,7 @@ export function daysBetween(fromIso, toIso) {
 
 /** The year whose VAT status applies: the service's, else the invoice's. */
 export function serviceYear(invoice) {
-  return Number((invoice.service?.from || invoice.date || "0000").slice(0, 4));
+  return Number((invoice.service?.to || invoice.service?.from || invoice.date || "0000").slice(0, 4));
 }
 
 // ---- drafts
@@ -346,7 +347,6 @@ export function markPaid(data, id, date) {
   if (!invoice || invoice.status !== "sent" || invoice.kind !== "invoice") return ["Only a sent invoice can be marked paid."];
   const day = parseDate(date);
   if (!day) return ["Enter the day the money came, such as 15.01.2025."];
-  if (day < invoice.date) return ["The payment can't be before the invoice date."];
   const entry = paymentEntry(invoice, day);
   if (entry.customer === undefined) delete entry.customer;
   const problems = entryProblems(data, entry);

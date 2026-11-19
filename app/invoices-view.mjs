@@ -171,6 +171,7 @@ function startInvoice(ui) {
 
 function editInvoice(ui, invoice) {
   const s = local(ui);
+  if (s.busy) return; // keeping the PDF closes the form
   s.editing = structuredClone(invoice);
   s.problems = [];
   s.report = null;
@@ -363,15 +364,12 @@ function removeDraft(ui, id) {
 
 /** Asks the server for the PDF of an invoice being issued; returns the
  *  server's answer as {ok, body}. */
-async function makePdf(ui, issued) {
-  // Counted as sending: an update's restart waits for it (update.mjs).
-  const response = await ui.sent(
-    fetch("/api/invoices", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ html: invoiceHtml(issued), xml: invoiceXml(issued), title: `${issued.kind === "cancellation" ? "Stornorechnung" : "Rechnung"} ${issued.number}` }),
-    }),
-  );
+async function makePdf(issued) {
+  const response = await fetch("/api/invoices", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ html: invoiceHtml(issued), xml: invoiceXml(issued), title: `${issued.kind === "cancellation" ? "Stornorechnung" : "Rechnung"} ${issued.number}` }),
+  });
   let body;
   try {
     body = await response.json();
@@ -401,7 +399,9 @@ async function issueWithPdf(ui, issued, onProblem, onKept) {
   ui.render();
   let result;
   try {
-    result = await makePdf(ui, issued);
+    // Counted as sending, its answer too: an update's restart waits for it
+    // (update.mjs), and the save below follows with no wait between.
+    result = await ui.sent(makePdf(issued));
   } catch (error) {
     result = { ok: false, status: 0, body: { error: error.message } };
   }

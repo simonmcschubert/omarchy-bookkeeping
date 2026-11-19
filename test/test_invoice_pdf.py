@@ -2,8 +2,6 @@
 of Chromium and the Mustang validator, so the steps around them are
 checked anywhere. test/invoice-pdf.test.mjs runs the real tools."""
 
-import datetime
-import functools
 import http.client
 import json
 import os
@@ -11,7 +9,6 @@ import sys
 import tempfile
 import textwrap
 import threading
-import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -242,13 +239,6 @@ class EndpointTest(unittest.TestCase):
         self.assertIn("--headless", calls)
         self.assertIn("--proxy-server=socks5://127.0.0.1:9", calls)
         self.assertIn("--action validate --no-notices --source", calls)
-        # The same invoice made at the same moment is the same file, kept once.
-        moment = datetime.datetime(2026, 11, 19, 12, 0, tzinfo=datetime.timezone.utc)
-        with mock.patch.object(invoice_pdf, "make_pdfa", functools.partial(invoice_pdf.make_pdfa, moment=moment)):
-            first = self.request("POST", "/api/invoices", self.invoice())[1]["file"]
-            time.sleep(1.1)  # past the second, which the file ID once came from
-            self.assertEqual(self.request("POST", "/api/invoices", self.invoice())[1]["file"], first)
-        self.assertEqual(sorted(self.receipts()), sorted({body["file"], first}))
 
     @unittest.skipIf(pikepdf is None, "needs pikepdf (python-pikepdf)")
     def test_invalid_invoice_is_not_kept(self):

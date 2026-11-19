@@ -220,7 +220,7 @@ write it.
   invoice can't be cancelled yet (refunds are not built).
 - The VAT status is kept per year in **Settings › Business**:
   Kleinunternehmer unless a year is set to charge VAT. The year of the
-  service decides. Invoices with VAT are not built yet: a year that charges
+  service decides (for a period, the year it ends). Invoices with VAT are not built yet: a year that charges
   VAT can't issue one.
 
 ## Received e-invoices
