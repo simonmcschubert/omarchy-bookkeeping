@@ -560,12 +560,19 @@ function filePicker(label, title) {
  * receipt. A file that is no e-invoice, or a broken one, says so.
  */
 async function addFile(file, note = null) {
+  const target = state.editing; // the form the file is for; none: a new expense
   toast(`Reading ${file.name}…`);
   let upload;
   try {
     upload = await uploadReceipt(file);
   } catch (error) {
     toast(`Not added: ${error.message}`, "bad");
+    return;
+  }
+  // The form may have closed or changed while the file was read: then the
+  // file belongs to none of what is open now.
+  if (state.editing !== target || (!target && route().view !== "entries")) {
+    toast(`${file.name} was not added: the form changed while it was read. Add it again.`, "bad");
     return;
   }
   const { receipt, reading } = upload;
