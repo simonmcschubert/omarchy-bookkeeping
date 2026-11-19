@@ -108,3 +108,15 @@ next year to stay without VAT (§ 19 UStG): 25.000 € from 2025, 22.000 € in
 against the data (`planImport`) before they are added (`applyImport`). A
 **copy** has the same kind, date, amount and text as an entry already there,
 or as an expense made into an asset (`entryKey`), and is left out.
+
+**Data version** (`VERSION`): the format of the data file, the same in
+`books.mjs` and `server.py`. New fields keep it: a file without them still
+loads, and missing means empty. A file of a newer version stays closed
+(`unreadable`).
+
+**Update**: a newer version of the app's code, which the update button
+installs: a **release** (`X.Y.Z`, the git tag `vX.Y.Z`) or, on the Preview
+**channel**, a **preview** (a commit of `main` that passed CI, on the branch
+`preview`). The channel (`stable` or `preview`) is kept in the checkout's
+git config (`bookkeeping.channel`). Updates change only the code, never the
+data or receipts, and never go back to an older version. _Avoid_: upgrade.

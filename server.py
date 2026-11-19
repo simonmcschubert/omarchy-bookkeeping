@@ -5,7 +5,9 @@ Listens on 127.0.0.1 only. The data lives in one JSON file,
 ~/.local/state/omarchy-bookkeeping/bookkeeping.json, in a directory only the
 owner can open; receipt files sit next to it in receipts/, named by their
 content, and e-invoices among them are read for the page (einvoice_reader).
-The page's colors come from the current Omarchy theme.
+The page's colors come from the current Omarchy theme. Updates come from
+updates.py and the update script next to this file; they never touch the
+data.
 
 Python standard library only (3.11 or newer).
 """
@@ -25,6 +27,7 @@ import traceback
 from pathlib import Path
 
 import einvoice_reader
+import updates
 
 PORT = 47221
 APP_DIR = Path(__file__).resolve().parent / "app"
@@ -50,6 +53,7 @@ STATIC = {
     "/assets-view.mjs": ("assets-view.mjs", "text/javascript; charset=utf-8"),
     "/einvoice.mjs": ("einvoice.mjs", "text/javascript; charset=utf-8"),
     "/einvoice.css": ("einvoice.css", "text/css; charset=utf-8"),
+    "/update.mjs": ("update.mjs", "text/javascript; charset=utf-8"),
     "/icon.svg": ("icon.svg", "image/svg+xml"),
 }
 
@@ -260,9 +264,11 @@ class BookkeepingServer(http.server.ThreadingHTTPServer):
 
     daemon_threads = True
 
-    def __init__(self, port, data_file, theme_path):
+    def __init__(self, port, data_file, theme_path, updater=None):
         self.data_file = Path(data_file)
         self.theme_path = Path(theme_path)
+        # updates.Updater; without one (tests), no /api/update.
+        self.updater = updater
         self.saving = threading.Lock()
         super().__init__(("127.0.0.1", port), Handler)
         bound = self.server_address[1]
@@ -326,6 +332,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.get_receipt(path.removeprefix("/api/receipts/"))
         elif path.startswith("/api/einvoice/"):
             self.get_einvoice(path.removeprefix("/api/einvoice/"))
+        elif path == "/api/update" and self.server.updater:
+            self.send_json(200, self.server.updater.snapshot())
         elif path == "/theme.css":
             body = theme_css(self.server.theme_path).encode()
             self.send_body(200, body, "text/css; charset=utf-8")
@@ -405,7 +413,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def do_POST(self):
         if not self.allowed():
             return
-        if self.path.split("?", 1)[0] != "/api/receipts":
+        path = self.path.split("?", 1)[0]
+        if path == "/api/update" and self.server.updater:
+            body = self.read_json()
+            if body is not NO_BODY:
+                self.send_json(*updates.answer(self.server.updater, body))
+            return
+        if path != "/api/receipts":
             self.send_json(404, {"error": "Not found"})
             return
         content_type = self.headers.get_content_type()
@@ -473,10 +487,12 @@ def main():
     parser.add_argument("--data", default=None, help="data file (default: ~/.local/state/omarchy-bookkeeping/bookkeeping.json)")
     args = parser.parse_args()
     data_file = Path(args.data) if args.data else state_dir() / "bookkeeping.json"
+    updater = updates.Updater()
     try:
-        server = BookkeepingServer(args.port, data_file, theme_file())
+        server = BookkeepingServer(args.port, data_file, theme_file(), updater)
     except OSError as error:
         sys.exit(f"bookkeeping: cannot listen on 127.0.0.1:{args.port}: {error.strerror}")
+    updater.start()
     print(f"Bookkeeping on http://127.0.0.1:{server.server_address[1]}/ (data: {data_file})", file=sys.stderr, flush=True)
     try:
         server.serve_forever()

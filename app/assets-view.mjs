@@ -25,6 +25,12 @@ import { amountText, dateText, duplicateKey, euro, groupById, isClosed, lineFor,
 // The asset in the form: a copy with the typed text, `isNew` when new.
 let draft = null;
 let problems = [];
+
+/** Whether the asset form holds a draft, also when another view is on
+ *  show: an update's reload waits for it (update.mjs). */
+export function editingAsset() {
+  return draft !== null;
+}
 let show = "year"; // "year": the assets held in the selected year; "all"
 
 /** Opens the form for a new asset, filled from an expense entry that is
