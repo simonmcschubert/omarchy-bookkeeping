@@ -517,6 +517,7 @@ function todayIso() {
 
 function startEntry(kind, fields = {}) {
   const date = state.year === new Date().getFullYear() ? todayIso() : `${state.year}-12-31`;
+  const category = state.data.categories.find((c) => c.kind === kind)?.id ?? null;
   state.editing = {
     isNew: true,
     id: newId(),
@@ -524,10 +525,13 @@ function startEntry(kind, fields = {}) {
     date,
     amount: null,
     text: "",
-    category: state.data.categories.find((c) => c.kind === kind)?.id ?? null,
+    category,
     ref: "",
     receipt: null,
     number: kind === "income" ? nextNumber(state.data) : undefined,
+    // Not saved: tell what was chosen from what the form started with.
+    defaultDate: date,
+    defaultCategory: category,
     ...fields,
   };
   state.editorProblems = [];
@@ -537,7 +541,8 @@ function startEntry(kind, fields = {}) {
 
 // ---- receipt files and e-invoices
 
-/** A button that picks a receipt file for addFile. */
+/** A button that picks a file for a new expense, as + Expense replaces
+ *  the form that is open. */
 function filePicker(label, title) {
   const input = h("input", {
     type: "file",
@@ -546,21 +551,23 @@ function filePicker(label, title) {
     onchange: (event) => {
       const file = event.target.files[0];
       event.target.value = "";
-      if (file) addFile(file);
+      if (file) addFile(file, { fresh: true });
     },
   });
   return h("span", {}, h("button", { type: "button", title, onclick: () => input.click() }, label), input);
 }
 
 /**
- * A dropped or picked file. With the form open, it becomes the receipt of
- * that entry, and an e-invoice fills in what a new expense still lacks.
- * Otherwise it starts a new expense: an e-invoice fills it in and leaves
- * the date empty, for the day it was paid; any other file just becomes its
- * receipt. A file that is no e-invoice, or a broken one, says so.
+ * A dropped or picked file. With the form open (and not fresh), it becomes
+ * the receipt of that entry, and an e-invoice fills in a new expense where
+ * nothing was typed. Otherwise it starts a new expense: an e-invoice fills
+ * it in and leaves the date empty, for the day it was paid; any other file
+ * just becomes its receipt. A file that is no e-invoice, or a broken one,
+ * says so.
  */
-async function addFile(file, note = null) {
-  const target = state.editing; // the form the file is for; none: a new expense
+async function addFile(file, { fresh = false, note = null } = {}) {
+  const before = state.editing;
+  const target = fresh ? null : before; // the form the file is for; none: a new expense
   toast(`Reading ${file.name}…`);
   let upload;
   try {
@@ -571,23 +578,29 @@ async function addFile(file, note = null) {
   }
   // The form may have closed or changed while the file was read: then the
   // file belongs to none of what is open now.
-  if (state.editing !== target || (!target && route().view !== "entries")) {
+  if (state.editing !== before || (!target && route().view !== "entries")) {
     toast(`${file.name} was not added: the form changed while it was read. Add it again.`, "bad");
     return;
   }
   const { receipt, reading } = upload;
   const invoice = reading.status === "invoice" ? reading.invoice : null;
-  const opened = !state.editing;
+  const opened = !target;
   if (opened) startEntry("expense", invoice ? { date: "", category: null } : {});
   const e = state.editing;
   e.receipt = receipt;
   e.fromFile = { name: file.name, reading, notes: [], warnings: [reading.status === "problem" ? reading.message : null, note].filter(Boolean), dates: [] };
   if (invoice && e.isNew && e.kind === "expense") {
     const draft = expenseFromInvoice(state.data, invoice, receipt.file);
-    if (!String(e.text ?? "").trim()) e.text = draft.text;
-    if (e.amount == null || e.amount === "") e.amount = draft.amount;
-    if (!String(e.ref ?? "").trim()) e.ref = draft.ref;
-    if (opened) e.category = draft.category;
+    // A field is free when empty, as the form started, or as an earlier
+    // file filled it: what was typed or chosen stays. e.filled holds what
+    // this file filled in, and nothing else.
+    const previous = e.filled ?? {};
+    const free = (key) => e[key] == null || String(e[key]).trim() === "" || (key in previous && e[key] === previous[key]);
+    const filled = {};
+    for (const key of ["text", "amount", "ref"]) if (free(key)) filled[key] = e[key] = draft[key];
+    if (opened || e.category === e.defaultCategory || ("category" in previous && e.category === previous.category)) filled.category = e.category = draft.category;
+    if (e.date === e.defaultDate) e.date = "";
+    e.filled = filled;
     Object.assign(e.fromFile, { notes: draft.notes, warnings: [...draft.warnings, ...e.fromFile.warnings], dates: draft.dates });
   }
   render();
@@ -756,7 +769,7 @@ function setUpDrop() {
     depth = 0;
     overlay.hidden = true;
     const files = [...event.dataTransfer.files];
-    if (here() && files.length) addFile(files[0], files.length > 1 ? `One file at a time: only ${files[0].name} was added.` : null);
+    if (here() && files.length) addFile(files[0], { note: files.length > 1 ? `One file at a time: only ${files[0].name} was added.` : null });
   });
 }
 

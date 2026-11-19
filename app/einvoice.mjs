@@ -130,14 +130,21 @@ function quantityText(quantity, unit) {
   return `${decimalText(quantity)}${name ? ` ${name}` : ""}`;
 }
 
+/** Paid in full already, by card, say: nothing left to pay, and a
+ *  prepaid amount. */
+function paidInFull(totals) {
+  return totals.payable === 0 && Boolean(totals.prepaid);
+}
+
 /** What the invoice is about, in one line: number, date, due, amount. */
 export function invoiceSummary(invoice) {
   const t = invoice.totals ?? {};
-  const amount = t.payable || t.gross;
+  const paid = paidInFull(t);
+  const amount = paid ? t.gross : (t.payable ?? t.gross);
   return [
     `${typeName(invoice.type)} ${invoice.number ?? "without number"}${invoice.issueDate ? ` of ${dateText(invoice.issueDate)}` : ""}`,
-    invoice.dueDate ? `due ${dateText(invoice.dueDate)}` : null,
-    amount != null ? money(amount, invoice.currency) : null,
+    invoice.dueDate && !paid ? `due ${dateText(invoice.dueDate)}` : null,
+    amount != null ? `${money(amount, invoice.currency)}${paid ? ", paid" : ""}` : null,
   ]
     .filter(Boolean)
     .join(" · ");
@@ -162,16 +169,18 @@ export function expenseFromInvoice(data, invoice, receiptFile) {
   const supplier = invoice.seller?.name ?? "";
   const t = invoice.totals ?? {};
 
-  // What is still to pay; an invoice paid in full (by card, say) shows 0
-  // there, so then its total is what was paid.
-  const due = t.payable ? t.payable : (t.gross ?? t.payable ?? null);
+  // What is still to pay; an invoice paid in full shows 0 there, so then
+  // its total is what was paid. Any other 0 leaves the amount to type.
+  const paid = paidInFull(t);
+  const due = paid ? t.gross : (t.payable ?? t.gross ?? null);
   let amount = null;
-  if (due != null && invoice.currency === "EUR") amount = invoice.credit ? -due : due;
-  else if (due != null && invoice.currency) {
+  if (due && invoice.currency === "EUR") amount = invoice.credit ? -due : due;
+  else if (due && invoice.currency) {
     warnings.push(`The invoice is in ${invoice.currency} (${money(due, invoice.currency)}): enter the euros that left your account.`);
   }
-  if (!t.payable && t.prepaid) notes.push(`The invoice says it is paid already (${money(t.prepaid, invoice.currency)}).`);
-  else if (t.prepaid) notes.push(`${money(t.prepaid, invoice.currency)} of it is paid already: the amount is what is left to pay.`);
+  if (paid) {
+    warnings.push(`The invoice says it is paid in full already (${money(t.prepaid, invoice.currency)}): book it on the day it was paid, unless that payment is booked already.`);
+  } else if (t.prepaid) notes.push(`${money(t.prepaid, invoice.currency)} of it is paid already: the amount is what is left to pay.`);
   if (invoice.credit) notes.push("A credit note: it goes in as a refund, a negative expense.");
   if ((invoice.vat ?? []).some((v) => v.category === "AE")) {
     warnings.push("Reverse charge: you, the buyer, owe the VAT on this to the tax office, as a Kleinunternehmer too (§ 13b Abs. 5, § 18 Abs. 4a UStG).");

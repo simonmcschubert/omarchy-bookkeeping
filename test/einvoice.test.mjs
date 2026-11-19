@@ -81,9 +81,17 @@ test("other currencies, paid invoices, reverse charge and self-billing", () => {
   assert.equal(draft.amount, null);
   assert.match(draft.warnings[0], /in USD \(26,06 USD\): enter the euros/);
 
+  // Paid by card, say: the total is what was paid, once.
   const paid = { ...invoice("xrechnung-ubl.xml"), totals: { gross: 2606, prepaid: 2606, payable: 0 } };
   assert.equal(expenseFromInvoice(emptyData(), paid).amount, 2606);
-  assert.match(expenseFromInvoice(emptyData(), paid).notes[0], /paid already \(26,06 €\)/);
+  assert.match(expenseFromInvoice(emptyData(), paid).warnings[0], /paid in full already \(26,06 €\).*unless that payment is booked already/);
+  assert.equal(invoiceSummary(paid), "Invoice BH-2025-0117 of 15.01.2025 · 26,06 €, paid");
+  // Nothing to pay, but nothing prepaid either: no amount to guess.
+  const nothing = { ...invoice("xrechnung-ubl.xml"), totals: { gross: 2606, payable: 0 } };
+  assert.equal(expenseFromInvoice(emptyData(), nothing).amount, null);
+  assert.equal(invoiceSummary(nothing), "Invoice BH-2025-0117 of 15.01.2025 · due 29.01.2025 · 0,00 €");
+  const noPayable = { ...invoice("xrechnung-ubl.xml"), totals: { gross: 2606, prepaid: 1000 } };
+  assert.equal(invoiceSummary(noPayable), "Invoice BH-2025-0117 of 15.01.2025 · due 29.01.2025 · 26,06 €");
 
   const reverse = { ...invoice("xrechnung-ubl.xml"), vat: [{ category: "AE", rate: "0", base: 2190, amount: 0 }] };
   assert.match(expenseFromInvoice(emptyData(), reverse).warnings[0], /§ 13b Abs\. 5/);
