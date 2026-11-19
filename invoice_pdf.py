@@ -23,6 +23,7 @@ import io
 import os
 import re
 import shutil
+import struct
 import subprocess
 import tempfile
 import xml.etree.ElementTree as ET
@@ -225,7 +226,13 @@ def make_pdfa(printed, xml, title, moment=None):
         # PDF/A needs to know which colours the page means: Chromium paints
         # in RGB, so the output intent is sRGB. Pillow's colour management
         # (LittleCMS) makes the profile.
-        icc = pikepdf.Stream(pdf, ImageCms.ImageCmsProfile(ImageCms.createProfile("sRGB")).tobytes())
+        profile = bytearray(ImageCms.ImageCmsProfile(ImageCms.createProfile("sRGB")).tobytes())
+        # The profile's header says when it was made (bytes 24 to 35); it
+        # gets the PDF's moment, so the PDF depends only on the invoice and
+        # the moment. Its profile ID (MD5) is left empty, so no checksum
+        # changes with it.
+        profile[24:36] = struct.pack(">6H", moment.year, moment.month, moment.day, moment.hour, moment.minute, moment.second)
+        icc = pikepdf.Stream(pdf, bytes(profile))
         icc.N = 3
         intent = pikepdf.Dictionary(
             Type=Name.OutputIntent,
@@ -272,7 +279,9 @@ def make_pdfa(printed, xml, title, moment=None):
             )
         )
         out = io.BytesIO()
-        pdf.save(out, min_version="1.7", fix_metadata_version=False)
+        # The file ID (PDF/A wants one) comes from the content, not from the
+        # clock, so the PDF depends only on the invoice and the moment.
+        pdf.save(out, min_version="1.7", fix_metadata_version=False, deterministic_id=True)
         return out.getvalue()
 
 
