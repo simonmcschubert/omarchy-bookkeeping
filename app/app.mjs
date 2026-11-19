@@ -31,7 +31,7 @@ import {
   years,
 } from "./books.mjs";
 import { aveurCard, drawAssets, editingAsset, printAssets, startAssetFromEntry } from "./assets-view.mjs";
-import { applyImport, planImport, readTable } from "./import.mjs";
+import { applyImport, planChanges, planImport, readFile } from "./import.mjs";
 import { backupState } from "./backup.mjs";
 import { RECEIPT_ACCEPT, expenseFromInvoice, hasInvoiceView, invoiceSummary, invoiceView } from "./einvoice.mjs";
 import { REGULAR, forgetPayment, numberProblems, vatStatus } from "./invoices.mjs";
@@ -952,7 +952,8 @@ function drawEuer() {
   const r = euer(state.data, state.year);
   const closed = isClosed(state.data, state.year);
   const business = state.data.business ?? {};
-  const carried = [...r.income, ...r.expenses, r.homeOffice].find((row) => row.line?.carried);
+  // Only lines shown are orange: those with an amount.
+  const carried = [...r.income, ...r.expenses, r.homeOffice].find((row) => row.amount !== 0 && row.line?.carried);
   const section = (title, rows, unlinked) => {
     const visible = rows.filter((row) => row.amount !== 0);
     const out = [h("tr", { class: "section" }, h("th", { colspan: 3, text: title }))];
@@ -1268,6 +1269,20 @@ async function readFileText(file) {
   return utf8.includes("�") ? new TextDecoder("windows-1252").decode(buffer) : utf8;
 }
 
+// Files picked at once come from one spreadsheet, so from one year.
+let picks = 0;
+
+const TABLE_KINDS = {
+  entries: [
+    ["income", "Einnahmen (income)"],
+    ["expense", "Ausgaben (expenses)"],
+  ],
+  accounts: [
+    ["income", "Konten Einnahmen"],
+    ["expense", "Konten Ausgaben"],
+  ],
+};
+
 function drawImport() {
   const picker = h("input", {
     type: "file",
@@ -1275,20 +1290,56 @@ function drawImport() {
     multiple: true,
     onchange: async (e) => {
       const files = [...e.target.files];
+      const pick = ++picks;
       for (const file of files) {
         const text = await readFileText(file);
-        state.tables.push({ name: file.name, text, ...readTable(text, { fileName: file.name }) });
+        state.tables.push({ name: file.name, text, ...readFile(text, { fileName: file.name, pick }) });
       }
+      e.target.value = "";
       render();
     },
   });
   const intro = card(
     "Import from the spreadsheets",
-    h("p", {}, "Export the ", h("strong", { text: "Einnahmen" }), " and ", h("strong", { text: "Ausgaben" }), " tables of each year as CSV, and pick the files here, several at once. Columns: Datum, Betrag, Text or Beschreibung, Rechnungsnr., Rechnungsnr. EXTERN, Konto. Title, empty and Summe rows are skipped."),
-    h("p", { class: "muted small", text: "Nothing is saved until Import. Entries already there (same day, amount and text) are left out, so a file can be picked again safely." }),
+    h(
+      "p",
+      {},
+      "In Numbers, ",
+      h("strong", { text: "File › Export To › CSV" }),
+      " writes a file for each table of a year's spreadsheet. Pick them all here at once, then the next year's: ",
+      h("strong", { text: "Einnahmen" }),
+      " and ",
+      h("strong", { text: "Ausgaben" }),
+      " become entries, the ",
+      h("strong", { text: "Konten" }),
+      " tables name new accounts and give their EÜR lines, and the ",
+      h("strong", { text: "EÜR" }),
+      " table adds the Tagespauschale and checks the year's totals.",
+    ),
+    h("p", { class: "muted small", text: "Columns: Datum, Betrag, Text or Beschreibung, Rechnungsnr., Rechnungsnr. EXTERN, Konto. Title, empty and Summe rows are skipped. Nothing is saved until Import. Entries already there (same day, amount and text) are left out, so a file can be picked again safely." }),
     picker,
   );
   if (!state.tables.length) return [intro];
+  const tableCell = (t, i) => {
+    if (TABLE_KINDS[t.type]) {
+      return h(
+        "select",
+        {
+          "aria-label": "Table",
+          onchange: (e) => {
+            state.tables[i] = { name: t.name, text: t.text, ...readFile(t.text, { kind: e.target.value, fileName: t.name, pick: t.pick }) };
+            render();
+          },
+        },
+        TABLE_KINDS[t.type].map(([kind, label]) => h("option", { value: kind, selected: t.kind === kind, text: label })),
+      );
+    }
+    return { euer: `EÜR ${t.year ?? ""}`, dashboard: "Dashboard" }[t.type] ?? "–";
+  };
+  const notes = {
+    dashboard: h("span", { class: "muted", text: "Not needed (the EÜR table has the totals): left out." }),
+    other: h("span", { class: "risk-text", text: "Not an Einnahmen, Ausgaben, Konten or EÜR table: left out." }),
+  };
   const files = card(
     "Files",
     h(
@@ -1303,24 +1354,9 @@ function drawImport() {
             "tr",
             {},
             h("td", { text: t.name }),
-            h(
-              "td",
-              {},
-              h(
-                "select",
-                {
-                  "aria-label": "Table",
-                  onchange: (e) => {
-                    state.tables[i] = { name: t.name, text: t.text, ...readTable(t.text, { kind: e.target.value }) };
-                    render();
-                  },
-                },
-                h("option", { value: "income", selected: t.kind === "income", text: "Einnahmen (income)" }),
-                h("option", { value: "expense", selected: t.kind === "expense", text: "Ausgaben (expenses)" }),
-              ),
-            ),
-            h("td", { class: "num", text: t.rows.length }),
-            h("td", {}, t.problems.length ? h("ul", { class: "problems" }, t.problems.map((p) => h("li", { text: `Row ${p.row}: ${p.reason}` }))) : h("span", { class: "muted", text: "None" })),
+            h("td", {}, tableCell(t, i)),
+            h("td", { class: "num", text: (t.rows ?? t.accounts)?.length ?? "" }),
+            h("td", {}, notes[t.type] ?? (t.problems.length ? h("ul", { class: "problems" }, t.problems.map((p) => h("li", { text: `Row ${p.row}: ${p.reason}` }))) : h("span", { class: "muted", text: "None" }))),
             h("td", {}, h("button", { class: "link danger", onclick: () => (state.tables.splice(i, 1), render()) }, "Remove")),
           ),
         ),
@@ -1331,6 +1367,14 @@ function drawImport() {
   const yearRows = [...plan.byYear].map(([year, t]) =>
     h("tr", {}, h("td", { text: year }), h("td", { class: "num", text: t.count }), h("td", { class: "num", text: euro(t.income) }), h("td", { class: "num", text: euro(t.expenses) }), h("td", { class: "num", text: euro(t.income - t.expenses) })),
   );
+  const lineLabel = (id) => (groupById(state.data, id) ?? plan.newLines.find((g) => g.id === id))?.label;
+  const accountText = (a) => {
+    const name = a.name === `Konto ${a.account}` ? a.name : `Konto ${a.account} ${a.name}`;
+    return `${a.kind === "income" ? "income" : "expense"} ${name} (${a.group ? lineLabel(a.group) : "no EÜR line"})`;
+  };
+  const unlinkedAccounts = plan.newAccounts.filter((a) => !a.group);
+  const numbersByYear = Map.groupBy(plan.lineNumbers, (n) => n.year);
+  const sheetYears = new Set(plan.checks.map((c) => c.year));
   const summary = card(
     "What the import adds",
     plan.entries.length
@@ -1347,10 +1391,16 @@ function drawImport() {
       plan.duplicates.length ? h("li", { class: "muted", text: `${plan.duplicates.length} entries are there already and are left out.` }) : null,
       plan.closedYears.length ? h("li", { class: "risk-text", text: `Closed years left out: ${plan.closedYears.join(", ")}.` }) : null,
       plan.newAccounts.length
-        ? h("li", { class: "risk-text", text: `New accounts become categories without an EÜR line: ${plan.newAccounts.map((a) => `${a.kind === "income" ? "income" : "expense"} Konto ${a.account}`).join(", ")}. Link them in Settings › Categories.` })
+        ? h("li", { class: unlinkedAccounts.length ? "risk-text" : "muted", text: `New categories: ${plan.newAccounts.map(accountText).join(", ")}.${unlinkedAccounts.length ? " Link those without a line in Settings › Categories." : ""}` })
         : null,
+      plan.newLines.length
+        ? h("li", { class: "risk-text", text: `New EÜR lines, from the Konten tables: ${plan.newLines.map((g) => `${g.label}${Object.keys(g.lines).length ? ` (${Object.entries(g.lines).map(([year, line]) => `line ${line} in ${year}`).join(", ")})` : ""}`).join(", ")}. Check them in Settings › Categories.` })
+        : null,
+      ...[...numbersByYear].map(([year, numbers]) => h("li", { class: "muted", text: `Line numbers of the ${year} form, from the Konten table: ${numbers.length === 1 ? `${numbers[0].label}, line ${numbers[0].line}` : `${numbers.length} lines`}.` })),
+      plan.homeOffice.length ? h("li", { class: "muted", text: `Home office from the EÜR table: ${plan.homeOffice.map((o) => `${o.year}: ${o.days} days (${euro(o.amount)})`).join(", ")}.` }) : null,
+      ...plan.notes.map((note) => h("li", { class: "risk-text", text: note })),
       plan.entries.some((e) => !e.category) ? h("li", { class: "risk-text", text: `${plan.entries.filter((e) => !e.category).length} rows have no Konto: they get no category.` }) : null,
-      h("li", { class: "muted", text: "Balance leaves out the home-office days: add those per year on the EÜR page." }),
+      [...plan.byYear.keys()].some((year) => !sheetYears.has(year)) ? h("li", { class: "muted", text: "Balance leaves out the home office: pick the year's EÜR table too, or add the days on the EÜR page." }) : null,
     ),
     h(
       "div",
@@ -1359,21 +1409,65 @@ function drawImport() {
         "button",
         {
           class: "primary",
-          disabled: !plan.entries.length,
+          disabled: !planChanges(plan),
           onclick: () => {
             const count = plan.entries.length;
-            state.year = Math.max(...plan.byYear.keys());
+            const changed = [...plan.byYear.keys(), ...plan.homeOffice.map((o) => o.year)];
+            if (changed.length) state.year = Math.max(...changed);
             state.tables = [];
             change((data) => applyImport(data, plan));
-            toast(`Imported ${count} entries`);
+            toast(count ? `Imported ${count} entries` : "Imported");
           },
         },
-        `Import ${plan.entries.length} entries`,
+        plan.entries.length ? `Import ${plan.entries.length} entries` : "Import",
       ),
       h("button", { onclick: () => ((state.tables = []), render()) }, "Clear"),
     ),
   );
-  return [intro, files, summary];
+  // The check first, so a difference is seen before Import.
+  return [intro, files, checkCard(plan), summary].filter(Boolean);
+}
+
+/** "EÜR table: 89,00 € (17,00 € more)"; "EÜR table: not found". */
+function sheetValue(sheet, books) {
+  if (sheet === null) return "EÜR table: not found";
+  return `EÜR table: ${euro(sheet)} (${euro(Math.abs(sheet - books))} ${sheet > books ? "more" : "less"})`;
+}
+
+/** Each year of an EÜR table: its totals against the books' after the import. */
+function checkCard(plan) {
+  if (!plan.checks.length) return null;
+  const cell = (check, name) =>
+    h(
+      "td",
+      { class: "num" },
+      euro(check.books[name]),
+      check.differs.includes(name) ? h("span", { class: "sub risk-text", text: sheetValue(check.sheet[name], check.books[name]) }) : null,
+    );
+  return card(
+    "Check against the EÜR tables",
+    h("p", { class: "muted small", text: "Each year's totals as they will be after the import, against those of the spreadsheet's EÜR table." }),
+    h(
+      "table",
+      { class: "compact" },
+      h("thead", {}, h("tr", {}, h("th", { text: "Year" }), h("th", { class: "num", text: "Income" }), h("th", { class: "num", text: "Expenses" }), h("th", { class: "num", text: "Profit" }), h("th"))),
+      h(
+        "tbody",
+        {},
+        plan.checks.map((check) =>
+          h(
+            "tr",
+            {},
+            h("td", { text: check.year }),
+            cell(check, "income"),
+            cell(check, "expenses"),
+            cell(check, "profit"),
+            h("td", {}, check.differs.length ? h("span", { class: "risk-text", text: "Differs" }) : h("span", { class: "good-text", text: "Matches" })),
+          ),
+        ),
+      ),
+    ),
+  );
 }
 
 function drawBusiness() {

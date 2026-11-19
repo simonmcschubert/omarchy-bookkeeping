@@ -106,10 +106,14 @@ next year to stay without VAT (§ 19 UStG): 25.000 € from 2025, 22.000 € in
 100.000 €; the app does not show that one. Sales of assets don't count
 (`yearTotals().revenue`).
 
-**Import**: CSV files of the spreadsheet tables (`readTable`), checked
+**Import**: CSV files of the spreadsheet tables (`readFile`), checked
 against the data (`planImport`) before they are added (`applyImport`). A
 **copy** has the same kind, date, amount and text as an entry already there,
-or as an expense made into an asset (`entryKey`), and is left out.
+or as an expense made into an asset (`entryKey`), and is left out. The
+files of one **pick** are one year's spreadsheet. Its **Konten tables**
+(`accounts`) name new accounts and give their EÜR lines and that year's line
+numbers; its **EÜR table** (`euer`) gives the home-office days and the
+totals the import is **checked** against (`checks`).
 
 **Data version** (`VERSION`): the format of the data file, the same in
 `books.mjs` and `server.py`. New fields keep it: a file without them still

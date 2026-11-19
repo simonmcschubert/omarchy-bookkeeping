@@ -668,6 +668,10 @@ table.compact select {
   font-size: 12px;
 }
 
+.sub.risk-text {
+  color: var(--risk-text);
+}
+
 tr.clickable {
   cursor: pointer;
 }

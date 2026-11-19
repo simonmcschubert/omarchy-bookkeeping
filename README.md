@@ -257,22 +257,44 @@ MINIMUM and BASIC WL are read with a note that they are no e-invoice under
 
 ## Import the old spreadsheets
 
-Each year's spreadsheet has an **Einnahmen** and an **Ausgaben** table. In
-Numbers, **File › Export To › CSV** writes one file per table. In
-**Settings › Import**, pick the files of as many years as wanted at once.
+![Settings › Import: a year's files, what they add, and the check against its EÜR](docs/import.png)
 
-- Einnahmen: Datum, Betrag, Beschreibung, Rechnungsnr. (the own running
-  number), Rechnungsnr. EXTERN (the payer's), Konto
-- Ausgaben: Datum, Betrag, Text, Rechnungsnr. (the supplier's), Konto
+In Numbers, **File › Export To › CSV** writes one file per table of a
+year's spreadsheet, such as `Einnahmen-Einnahmen.csv` or `EÜR-EÜR.csv`. In
+**Settings › Import**, pick all of them at once, then the next year's. The
+files picked together are taken as one year: that of the EÜR table, else
+that of the entries, unless a file's name has another (`2023 Konten
+Ausgaben.csv`). Each file is told by its columns, not its name:
 
-The columns are found by their names, under any title row; empty rows and
-the Summe row are skipped; amounts like `1.234,56 €` and dates like
-`15.01.2025` are read. The table is told by the file name (Einnahmen or
-Ausgaben) or the columns, and can be switched per file. The import shows
-what it would add per year before anything is saved, leaves out entries that
-are there already, and makes unknown account numbers into categories without
-an EÜR line, to link in Settings › Categories. The home-office days of past
-years go in by hand on the EÜR page.
+- **Einnahmen**: Datum, Betrag, Beschreibung, Rechnungsnr. (the own running
+  number), Rechnungsnr. EXTERN (the payer's), Konto. Becomes income.
+- **Ausgaben**: Datum, Betrag, Text, Rechnungsnr. (the supplier's), Konto.
+  Becomes expenses.
+- **Konten Einnahmen**, **Konten Ausgaben**: Konto and Beschreibung, and for
+  expenses Zeile Form and Kategorie, the form line the accounts below it are
+  on. An account the books don't have yet gets its name and its EÜR line
+  from here: the line of the same label (without its "zum Beispiel …"), or
+  else the one with that number on the year's form. A line the books don't
+  have becomes a new one, with its number. The table's line numbers also go
+  into that year's form where it has none yet (Settings › Categories).
+- **EÜR**: its Tagespauschale becomes the year's home-office days (the
+  amount ÷ the day rate; left out when the EÜR page has days already, or the
+  amount is no whole number of days). Its Summe Einnahmen, Summe Ausgaben
+  and Saldo are checked against the year as the import leaves it: **Check
+  against the EÜR tables** says *Matches* or shows the difference, before
+  anything is saved.
+- **Dashboard**: not needed, as the EÜR table has the totals; left out, as
+  is any other file.
+
+The columns are found by their names, under any title row; empty rows, rows
+like `;0;;;;` and the Summe row are skipped; amounts like `1.234,56 €` and
+dates like `15.01.2025` are read. Income or expenses are told by the file
+name (Einnahmen or Ausgaben) or the columns, and can be switched per file.
+The import shows what it would add per year before anything is saved, and
+leaves out entries that are there already and closed years. An account no
+Konten table names becomes a category without an EÜR line, to link in
+Settings › Categories. A year without its EÜR table gets its home-office
+days by hand on the EÜR page.
 
 ## Data
 
@@ -349,7 +371,8 @@ python3 server.py --port 47321 --data /tmp/books.json   # try it
 python3 test/einvoice_samples.py          # rewrites the sample e-invoices
 ```
 
-`test/fixtures/einvoices/` holds made-up e-invoices (XRechnung in UBL and
+`test/fixtures/numbers-2025/` is a made-up year's spreadsheet as Numbers
+exports it, to pick in Settings › Import. `test/fixtures/einvoices/` holds made-up e-invoices (XRechnung in UBL and
 CII, a credit note, a ZUGFeRD PDF) to drop on the Entries page.
 
 Without Chromium, Java, pikepdf or `tools/mustang-cli.jar`, the tests that

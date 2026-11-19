@@ -1,0 +1,24 @@
+Konto;Beschreibung;Zeile Form;Kategorie
+;;56;Laufende EDV-Kosten
+1;Software;;
+;;;
+;;49;Aufwendungen für Telekommunikation
+21;Domains;;
+22;Internet;;
+;;;
+;;26;Waren, Rohstoffe und Hilfsstoffe einschließlich der Nebenkosten
+;;27;Bezogene Leistungen (zum Beispiel Fremdleistungen)
+;;51;Fortbildungskosten (ohne Reisekosten)
+51;Online Kurse;;
+52;Online Fortbildung;;
+;;52;Kosten für Rechts- und Steuerberatung, Buchführung
+61;Buchführung;;
+;;55;Beiträge, Gebühren, Abgaben und Versicherungen
+71;IHK Mitgliedschaft;;
+72;Versicherungen;;
+;;57;Arbeitsmittel (zum Beispiel Bürobedarf, Porto, Fachliteratur)
+81;Fachliteratur;;
+82;Bürobedarf;;
+;;59;Kosten für Verpackung und Transport
+;;60;Werbekosten (zum Beispiel Inserate, Werbespots, Plakate)
+101;Online Anzeigen;;
