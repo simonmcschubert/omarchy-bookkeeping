@@ -52,7 +52,19 @@ its result is in `backup-status`. Nothing at the destination is deleted.
 the destination, kept there, so every version stays.
 
 **Receipt**: the file behind an entry: a PDF, photo or e-invoice XML, kept
-in `receipts/` under the SHA-256 of its content.
+unchanged in `receipts/` under the SHA-256 of its content. `einvoice` says
+whether it was read as an e-invoice (unset on older receipts).
+
+**E-invoice**: a structured invoice by EN 16931: XRechnung or another, as XML
+in UBL or CII syntax, alone or inside a ZUGFeRD / Factur-X PDF. The server
+reads every receipt for one (`read_receipt`); the **reading** is `invoice`,
+`plain` (a photo, or a PDF without one) or `problem` (no e-invoice, or a
+broken one). _Avoid_: X-invoice, e-bill.
+
+**Supplier** (`seller`): who sent an e-invoice; its name starts the
+expense's text. **Amount payable** (`totals.payable`): what is left to pay,
+which becomes the expense's amount (the total, when it was paid already). A
+**credit note** (`credit`) makes it a refund.
 
 **Asset** (`assets`, Anlagegut): something bought for the business to use
 for more than a year, such as a laptop or a desk. It owns its purchase: it

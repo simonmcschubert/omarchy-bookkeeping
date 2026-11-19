@@ -32,6 +32,7 @@ import {
 import { aveurCard, drawAssets, printAssets, startAssetFromEntry } from "./assets-view.mjs";
 import { applyImport, planImport, readTable } from "./import.mjs";
 import { backupState } from "./backup.mjs";
+import { RECEIPT_ACCEPT, expenseFromInvoice, hasInvoiceView, invoiceSummary, invoiceView } from "./einvoice.mjs";
 
 const VIEWS = [
   ["overview", "Overview"],
@@ -165,13 +166,24 @@ async function save() {
   }
 }
 
-async function uploadReceipt(file) {
+/** Saves a receipt file. The server also reads it as an e-invoice: the
+ *  reading says what it found (status invoice, plain or problem). */
+async function uploadAndRead(file) {
   const types = { "text/xml": "application/xml", "": guessType(file.name) };
   const type = types[file.type] ?? file.type;
   const response = await fetch("/api/receipts", { method: "POST", headers: { "Content-Type": type }, body: file });
   const body = await response.json();
   if (!response.ok) throw new Error(body.error || response.statusText);
-  return { file: body.file, name: file.name };
+  const reading = body.einvoice ?? { status: "plain" };
+  const receipt = { file: body.file, name: file.name };
+  // Remembered for the readable view: an XML file may be no e-invoice.
+  if (reading.status === "invoice" || body.file.endsWith(".xml")) receipt.einvoice = reading.status === "invoice";
+  return { receipt, reading };
+}
+
+/** Saves a receipt file: { file, name }, for a form that only keeps it. */
+async function uploadReceipt(file) {
+  return (await uploadAndRead(file)).receipt;
 }
 
 function guessType(name) {
@@ -436,6 +448,7 @@ function drawEntries() {
     h("span", { class: "spacer" }),
     h("button", { class: "primary", disabled: closed, onclick: () => startEntry("income") }, "+ Income"),
     h("button", { class: "primary", disabled: closed, onclick: () => startEntry("expense") }, "+ Expense"),
+    filePicker("Expense from file…", "A receipt or e-invoice (PDF, photo, XRechnung or ZUGFeRD) becomes a new expense. Or drop the file on the page."),
   );
   const income = entries.filter((e) => e.kind === "income").reduce((t, e) => t + e.amount, 0);
   const expenses = entries.filter((e) => e.kind === "expense").reduce((t, e) => t + e.amount, 0);
@@ -473,7 +486,7 @@ function drawEntries() {
           h("tr", {}, h("td", { colspan: 4, class: "muted", text: `${entries.length} entries` }), h("td", { class: "num" }, h("span", { class: "good-text", text: `+${euro(income)}` }), h("br"), `−${euro(expenses)}`), h("td")),
         ),
       )
-    : h("p", { class: "muted", text: state.data.entries.length ? "No entries here." : "No entries yet. Add one, or import the old spreadsheets in Settings › Import." });
+    : h("p", { class: "muted", text: state.data.entries.length ? "No entries here." : "No entries yet. Add one, drop a receipt or e-invoice on the page, or import the old spreadsheets in Settings › Import." });
   return [
     closed ? h("p", { class: "notice", text: `${state.year} is closed: its entries can't be changed. Reopen it on the EÜR page.` }) : null,
     card(null, toolbar, state.editing?.isNew ? editor() : null, table),
@@ -487,8 +500,11 @@ function signed(entry) {
 }
 
 function receiptLink(entry) {
-  if (entry.receipt) return h("a", { href: `/api/receipts/${entry.receipt.file}`, target: "_blank", rel: "noopener", title: entry.receipt.name, onclick: (e) => e.stopPropagation(), text: entry.receipt.file.split(".").pop().toUpperCase() });
-  return h("span", { class: "muted", text: "–" });
+  if (!entry.receipt) return h("span", { class: "muted", text: "–" });
+  const link = h("a", { href: `/api/receipts/${entry.receipt.file}`, target: "_blank", rel: "noopener", title: entry.receipt.name, onclick: (e) => e.stopPropagation(), text: entry.receipt.file.split(".").pop().toUpperCase() });
+  if (!hasInvoiceView(entry.receipt)) return link;
+  const view = h("button", { type: "button", class: "link", title: "Show the e-invoice in readable form", onclick: (e) => (e.stopPropagation(), showInvoice(entry.receipt)) }, "E-invoice");
+  return h("span", { class: "receipt-links" }, view, link);
 }
 
 function segmented(options, value, onChange) {
@@ -504,8 +520,9 @@ function todayIso() {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
 }
 
-function startEntry(kind) {
+function startEntry(kind, fields = {}) {
   const date = state.year === new Date().getFullYear() ? todayIso() : `${state.year}-12-31`;
+  const category = state.data.categories.find((c) => c.kind === kind)?.id ?? null;
   state.editing = {
     isNew: true,
     id: newId(),
@@ -513,14 +530,252 @@ function startEntry(kind) {
     date,
     amount: null,
     text: "",
-    category: state.data.categories.find((c) => c.kind === kind)?.id ?? null,
+    category,
     ref: "",
     receipt: null,
     number: kind === "income" ? nextNumber(state.data) : undefined,
+    // Not saved: tell what was chosen from what the form started with.
+    defaultDate: date,
+    defaultCategory: category,
+    ...fields,
   };
   state.editorProblems = [];
   render();
-  document.querySelector(".editor input[name=amount]")?.focus();
+  document.querySelector(`.editor input[name=${state.editing.date ? "amount" : "date"}]`)?.focus();
+}
+
+// ---- receipt files and e-invoices
+
+/** A button that picks a file for a new expense, as + Expense replaces
+ *  the form that is open. */
+function filePicker(label, title) {
+  const input = h("input", {
+    type: "file",
+    accept: RECEIPT_ACCEPT,
+    hidden: true,
+    onchange: (event) => {
+      const file = event.target.files[0];
+      event.target.value = "";
+      if (file) addFile(file, { fresh: true });
+    },
+  });
+  return h("span", {}, h("button", { type: "button", title, onclick: () => input.click() }, label), input);
+}
+
+/**
+ * A dropped or picked file. With the form open (and not fresh), it becomes
+ * the receipt of that entry, and an e-invoice fills in a new expense where
+ * nothing was typed. Otherwise it starts a new expense: an e-invoice fills
+ * it in and leaves the date empty, for the day it was paid; any other file
+ * just becomes its receipt. A file that is no e-invoice, or a broken one,
+ * says so.
+ */
+async function addFile(file, { fresh = false, note = null } = {}) {
+  const before = state.editing;
+  const target = fresh ? null : before; // the form the file is for; none: a new expense
+  toast(`Reading ${file.name}…`);
+  let upload;
+  try {
+    upload = await uploadAndRead(file);
+  } catch (error) {
+    toast(`Not added: ${error.message}`, "bad");
+    return;
+  }
+  // The form may have closed or changed while the file was read: then the
+  // file belongs to none of what is open now.
+  if (state.editing !== before || (!target && route().view !== "entries")) {
+    toast(`${file.name} was not added: the form changed while it was read. Add it again.`, "bad");
+    return;
+  }
+  const { receipt, reading } = upload;
+  const invoice = reading.status === "invoice" ? reading.invoice : null;
+  const opened = !target;
+  if (opened) startEntry("expense", invoice ? { date: "", category: null } : {});
+  const e = state.editing;
+  e.receipt = receipt;
+  e.fromFile = { name: file.name, reading, notes: [], warnings: [reading.status === "problem" ? reading.message : null, note].filter(Boolean), dates: [] };
+  if (invoice && e.isNew && e.kind === "expense") {
+    const draft = expenseFromInvoice(state.data, invoice, receipt.file);
+    // A field is free when empty, as the form started, or as an earlier
+    // file filled it: what was typed or chosen stays. e.filled holds what
+    // this file filled in, and nothing else.
+    const previous = e.filled ?? {};
+    const free = (key) => e[key] == null || String(e[key]).trim() === "" || (key in previous && e[key] === previous[key]);
+    const filled = {};
+    for (const key of ["text", "amount", "ref"]) if (free(key)) filled[key] = e[key] = draft[key];
+    if (opened || e.category === e.defaultCategory || ("category" in previous && e.category === previous.category)) filled.category = e.category = draft.category;
+    if (e.date === e.defaultDate) e.date = "";
+    e.filled = filled;
+    Object.assign(e.fromFile, { notes: draft.notes, warnings: [...draft.warnings, ...e.fromFile.warnings], dates: draft.dates });
+  }
+  render();
+  if (opened) document.querySelector(`.editor input[name=${e.date ? "amount" : "date"}]`)?.focus();
+  if (invoice) toast(`Read the e-invoice from ${invoice.seller?.name ?? "the supplier"}: check it, then save.`);
+  else if (reading.status === "problem") toast("Not read as an e-invoice: kept as a plain receipt.", "bad");
+  else toast(`${file.name} is the receipt.`);
+}
+
+/** In the form: what was read from the file, and what to check. */
+function fileNote(e) {
+  const f = e.fromFile;
+  if (!f) return null;
+  const invoice = f.reading.status === "invoice" ? f.reading.invoice : null;
+  return h(
+    "div",
+    { class: `from-file ${f.warnings.length ? "warn" : ""}` },
+    invoice
+      ? h(
+          "p",
+          {},
+          h("strong", { text: `E-invoice from ${invoice.seller?.name ?? "an unknown supplier"}` }),
+          ` · ${invoiceSummary(invoice)} `,
+          h("button", { type: "button", class: "link", onclick: () => showInvoice(e.receipt, f.reading) }, "Show the invoice"),
+        )
+      : null,
+    f.warnings.map((w) => h("p", { class: "risk-text small", text: w })),
+    f.notes.map((n) => h("p", { class: "muted small", text: n })),
+    f.reading.status === "problem" ? h("p", { class: "muted small", text: "The file is kept as a plain receipt: fill in the expense yourself." }) : null,
+    invoice && e.isNew && !e.date ? h("p", { class: "muted small", text: "Enter the day you paid it: an expense counts on the day of payment (Zuflussprinzip)." }) : null,
+  );
+}
+
+/** Buttons under the date: the invoice's dates and today. */
+function datePicks(e) {
+  const dates = e.fromFile?.dates ?? [];
+  if (!dates.length) return null;
+  const pick = (date) => () => {
+    e.date = date;
+    render();
+    document.querySelector(".editor input[name=amount]")?.focus();
+  };
+  return h(
+    "span",
+    { class: "date-picks" },
+    [...dates, { label: "Today", date: todayIso() }].map((d) => h("button", { type: "button", class: "link", title: dateText(d.date), onclick: pick(d.date) }, d.label)),
+  );
+}
+
+/** The e-invoice in readable form, in a dialog over the page. The XML
+ *  itself is served as plain text only, so the page draws what the server
+ *  read from it. */
+async function showInvoice(receipt, reading) {
+  if (!reading) {
+    try {
+      const response = await fetch(`/api/einvoice/${receipt.file}`);
+      reading = await response.json();
+      if (!response.ok) throw new Error(reading.error || response.statusText);
+    } catch (error) {
+      toast(`Can't show it: ${error.message}`, "bad");
+      return;
+    }
+  }
+  let dialog = document.getElementById("invoice-view");
+  if (!dialog) {
+    dialog = h("dialog", { id: "invoice-view", class: "invoice-view", "aria-labelledby": "invoice-view-title" });
+    // A click on the backdrop closes it, as Escape does.
+    dialog.addEventListener("click", (event) => event.target === dialog && dialog.close());
+    document.body.append(dialog);
+  }
+  dialog.replaceChildren(invoiceSheet(reading, receipt, () => dialog.close()));
+  if (!dialog.open) dialog.showModal();
+  dialog.querySelector(".sheet-head button")?.focus();
+}
+
+function invoiceSheet(reading, receipt, close) {
+  const fileLink = receipt?.file ? h("a", { href: `/api/receipts/${receipt.file}`, target: "_blank", rel: "noopener", text: receipt.file.endsWith(".xml") ? "Open the XML" : "Open the file" }) : null;
+  const head = (title, sub) =>
+    h("div", { class: "sheet-head" }, h("div", {}, h("h2", { id: "invoice-view-title", text: title }), sub ? h("p", { class: "muted small", text: sub }) : null), fileLink, h("button", { type: "button", onclick: close }, "Close"));
+  if (reading.status !== "invoice") {
+    const message = reading.message ?? "No e-invoice data in this file.";
+    return h("div", { class: "sheet" }, head(receipt?.name ?? "Receipt"), h("p", { class: "notice", text: message }));
+  }
+  const v = invoiceView(reading.invoice);
+  const list = (rows) => h("dl", { class: "facts" }, rows.flatMap(([label, value]) => [h("dt", { text: label }), h("dd", { text: value })]));
+  const lines = v.lines.length
+    ? h(
+        "div",
+        { class: "table-scroll" },
+        h(
+          "table",
+          { class: "compact lines" },
+          h("thead", {}, h("tr", {}, h("th", { text: "Pos." }), h("th", { text: "Item" }), h("th", { class: "num", text: "Quantity" }), h("th", { class: "num", text: "Unit price" }), h("th", { class: "num", text: "VAT" }), h("th", { class: "num", text: "Net" }))),
+          h(
+            "tbody",
+            {},
+            v.lines.map((line) =>
+              h(
+                "tr",
+                {},
+                h("td", { class: "muted", text: line.position }),
+                h("td", {}, line.name, line.description ? h("span", { class: "sub pre", text: line.description }) : null),
+                h("td", { class: "num", text: line.quantity }),
+                h("td", { class: "num", text: line.price }),
+                h("td", { class: "num", text: line.vat }),
+                h("td", { class: "num", text: line.amount }),
+              ),
+            ),
+          ),
+        ),
+      )
+    : h("p", { class: "muted", text: "No invoice lines in this e-invoice." });
+  const totals = h(
+    "table",
+    { class: "compact totals" },
+    h(
+      "tbody",
+      {},
+      v.totals.map((row) => h("tr", { class: row.strong ? "strong" : null }, h("td", {}, row.label, row.detail ? h("span", { class: "sub", text: row.detail }) : null), h("td", { class: "num", text: row.amount }))),
+    ),
+  );
+  return h(
+    "div",
+    { class: "sheet" },
+    head(v.title, v.source),
+    v.warnings.length ? h("ul", { class: "problems" }, v.warnings.map((w) => h("li", { text: w }))) : null,
+    v.credit ? h("p", { class: "notice", text: "A credit note: the supplier credits you this amount." }) : null,
+    h("div", { class: "parties" }, v.parties.map((p) => h("div", { class: "party" }, h("h3", { text: p.label }), p.lines.map((line) => h("p", { text: line }))))),
+    v.facts.length ? list(v.facts) : null,
+    lines,
+    totals,
+    v.payment.length ? h("div", {}, h("h3", { text: "Payment" }), list(v.payment)) : null,
+    v.notes.length ? h("div", { class: "notes" }, h("h3", { text: "Notes" }), v.notes.map((n) => h("p", { text: n }))) : null,
+  );
+}
+
+/** Files dropped on the Entries page go to addFile. Elsewhere a drop does
+ *  nothing, instead of the browser leaving the app to open the file. */
+function setUpDrop() {
+  const overlay = h("div", { class: "drop-overlay", hidden: true }, h("p"));
+  document.body.append(overlay);
+  let depth = 0;
+  const hasFiles = (event) => [...(event.dataTransfer?.types ?? [])].includes("Files");
+  const here = () => route().view === "entries";
+  window.addEventListener("dragenter", (event) => {
+    if (!hasFiles(event)) return;
+    event.preventDefault();
+    depth += 1;
+    if (!here()) return;
+    overlay.firstChild.textContent = state.editing ? "Drop to make it the receipt of the entry in the form" : "Drop to add an expense from it: PDF, photo or e-invoice";
+    overlay.hidden = false;
+  });
+  window.addEventListener("dragleave", (event) => {
+    if (!hasFiles(event)) return;
+    depth = Math.max(0, depth - 1);
+    if (!depth) overlay.hidden = true;
+  });
+  window.addEventListener("dragover", (event) => {
+    if (!hasFiles(event)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = here() ? "copy" : "none";
+  });
+  window.addEventListener("drop", (event) => {
+    if (!hasFiles(event)) return;
+    event.preventDefault();
+    depth = 0;
+    overlay.hidden = true;
+    const files = [...event.dataTransfer.files];
+    if (here() && files.length) addFile(files[0], { note: files.length > 1 ? `One file at a time: only ${files[0].name} was added.` : null });
+  });
 }
 
 function editEntry(entry) {
@@ -536,21 +791,22 @@ function editor() {
   };
   const categories = state.data.categories.filter((c) => c.kind === e.kind).sort((a, b) => a.account - b.account);
   const receipt = e.receipt
-    ? h("span", { class: "receipt" }, h("a", { href: `/api/receipts/${e.receipt.file}`, target: "_blank", rel: "noopener", text: e.receipt.name }), h("button", { type: "button", class: "link danger", onclick: () => ((e.receipt = null), render()) }, "Remove"))
+    ? h(
+        "span",
+        { class: "receipt" },
+        h("a", { href: `/api/receipts/${e.receipt.file}`, target: "_blank", rel: "noopener", text: e.receipt.name }),
+        hasInvoiceView(e.receipt) && !e.fromFile ? h("button", { type: "button", class: "link", onclick: () => showInvoice(e.receipt) }, "Show the invoice") : null,
+        h("button", { type: "button", class: "link danger", onclick: () => ((e.receipt = null), (e.fromFile = null), render()) }, "Remove"),
+      )
     : h("input", {
         type: "file",
-        accept: ".pdf,.jpg,.jpeg,.png,.webp,.xml",
-        onchange: async (event) => {
+        accept: RECEIPT_ACCEPT,
+        onchange: (event) => {
           const file = event.target.files[0];
-          if (!file) return;
-          try {
-            e.receipt = await uploadReceipt(file);
-            render();
-          } catch (error) {
-            toast(`Receipt not saved: ${error.message}`, "bad");
-          }
+          if (file) addFile(file);
         },
       });
+  const paidDate = e.fromFile?.reading.status === "invoice" && e.kind === "expense";
   return h(
     "form",
     {
@@ -562,10 +818,11 @@ function editor() {
       onkeydown: (event) => event.key === "Escape" && cancelEdit(),
     },
     h("div", { class: "editor-head" }, h("h3", { text: e.isNew ? `New ${e.kind === "income" ? "income" : "expense"}` : `Edit ${e.kind === "income" ? "income" : "expense"}` })),
+    fileNote(e),
     h(
       "div",
       { class: "form-grid" },
-      h("label", {}, "Date", h("input", { name: "date", value: dateText(parseDate(e.date) ?? "") || e.date, placeholder: "TT.MM.JJJJ", oninput: set("date"), required: true })),
+      h("label", {}, paidDate ? "Date paid" : "Date", h("input", { name: "date", value: dateText(parseDate(e.date) ?? "") || e.date, placeholder: "TT.MM.JJJJ", oninput: set("date"), required: true }), datePicks(e)),
       h("label", {}, "Amount (€)", h("input", { name: "amount", inputmode: "decimal", value: typeof e.amount === "number" ? amountText(e.amount) : (e.amount ?? ""), placeholder: "12,40", oninput: set("amount"), required: true })),
       h("label", { class: "wide" }, "What", h("input", { name: "text", value: e.text, placeholder: e.kind === "income" ? "Workshop, affiliate payout" : "Domain example.de", oninput: set("text"), required: true })),
       h(
@@ -575,6 +832,7 @@ function editor() {
         h(
           "select",
           { name: "category", onchange: set("category") },
+          e.category ? null : h("option", { value: "", selected: true, disabled: true, text: "Choose a category" }),
           categories.map((c) => h("option", { value: c.id, selected: c.id === e.category, text: `${c.account} · ${c.name}${c.group ? "" : " (no EÜR line)"}` })),
         ),
       ),
@@ -1160,6 +1418,7 @@ function drawBackup() {
 
 // ---- start
 
+setUpDrop();
 Promise.all([load(), loadBackup()])
   .then(() => {
     const all = years(state.data);

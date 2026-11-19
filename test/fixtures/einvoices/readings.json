@@ -1,0 +1,353 @@
+{
+  "xrechnung-ubl.xml": {
+    "status": "invoice",
+    "invoice": {
+      "syntax": "UBL",
+      "spec": "urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0",
+      "type": "380",
+      "credit": false,
+      "number": "BH-2025-0117",
+      "issueDate": "2025-01-15",
+      "dueDate": "2025-01-29",
+      "deliveryDate": null,
+      "periodStart": "2025-01-01",
+      "periodEnd": "2025-01-31",
+      "currency": "EUR",
+      "buyerReference": "Kundennummer 40711",
+      "orderReference": null,
+      "precedingInvoice": null,
+      "notes": [
+        "Vielen Dank für Ihren Auftrag."
+      ],
+      "seller": {
+        "name": "Beispiel Hosting GmbH",
+        "tradingName": "Beispiel Hosting",
+        "address": [
+          "Serverstraße 12",
+          "12345 Musterstadt",
+          "DE"
+        ],
+        "vatId": "DE999999999",
+        "contact": "Buchhaltung",
+        "phone": "+49 30 0000000",
+        "email": "buchhaltung@beispiel-hosting.example"
+      },
+      "buyer": {
+        "name": "Musterwerkstatt Erika Mustermann",
+        "address": [
+          "Beispielweg 3",
+          "54321 Musterdorf",
+          "DE"
+        ]
+      },
+      "lines": [
+        {
+          "id": "1",
+          "name": "Webhosting Paket M, Januar 2025",
+          "description": "Paket M: 50 GB Speicher, 10 Postfächer",
+          "quantity": "1",
+          "unit": "MON",
+          "price": "9.90",
+          "net": 990,
+          "vatCategory": "S",
+          "vatRate": "19"
+        },
+        {
+          "id": "2",
+          "name": "Domain musterwerkstatt.example",
+          "quantity": "1",
+          "unit": "ANN",
+          "price": "12.00",
+          "net": 1200,
+          "vatCategory": "S",
+          "vatRate": "19"
+        }
+      ],
+      "allowances": [],
+      "vat": [
+        {
+          "category": "S",
+          "rate": "19",
+          "base": 2190,
+          "amount": 416
+        }
+      ],
+      "totals": {
+        "lines": 2190,
+        "net": 2190,
+        "vat": 416,
+        "gross": 2606,
+        "payable": 2606
+      },
+      "payment": {
+        "means": "58",
+        "iban": "DE09123456780001234567",
+        "accountName": "Beispiel Hosting GmbH",
+        "reference": "BH-2025-0117",
+        "terms": "Zahlbar bis 29.01.2025 ohne Abzug."
+      },
+      "format": "XRechnung 3.0",
+      "warnings": [],
+      "container": "xml"
+    }
+  },
+  "xrechnung-ubl-credit-note.xml": {
+    "status": "invoice",
+    "invoice": {
+      "syntax": "UBL",
+      "spec": "urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0",
+      "type": "381",
+      "credit": true,
+      "number": "BH-G-2025-0004",
+      "issueDate": "2025-02-03",
+      "dueDate": null,
+      "deliveryDate": null,
+      "periodStart": "2025-01-20",
+      "periodEnd": "2025-01-21",
+      "currency": "EUR",
+      "buyerReference": "Kundennummer 40711",
+      "orderReference": null,
+      "precedingInvoice": "BH-2025-0117",
+      "notes": [
+        "Gutschrift für den Ausfall am 20.01.2025."
+      ],
+      "seller": {
+        "name": "Beispiel Hosting GmbH",
+        "address": [
+          "Serverstraße 12",
+          "12345 Musterstadt",
+          "DE"
+        ],
+        "vatId": "DE999999999",
+        "contact": "Buchhaltung",
+        "phone": "+49 30 0000000",
+        "email": "buchhaltung@beispiel-hosting.example"
+      },
+      "buyer": {
+        "name": "Musterwerkstatt Erika Mustermann",
+        "address": [
+          "Beispielweg 3",
+          "54321 Musterdorf",
+          "DE"
+        ]
+      },
+      "lines": [
+        {
+          "id": "1",
+          "name": "Gutschrift Webhosting Paket M",
+          "quantity": "15",
+          "unit": "DAY",
+          "price": "0.33",
+          "net": 495,
+          "vatCategory": "S",
+          "vatRate": "19"
+        }
+      ],
+      "allowances": [],
+      "vat": [
+        {
+          "category": "S",
+          "rate": "19",
+          "base": 495,
+          "amount": 95
+        }
+      ],
+      "totals": {
+        "lines": 495,
+        "net": 495,
+        "vat": 95,
+        "gross": 590,
+        "payable": 590
+      },
+      "payment": {
+        "means": "30",
+        "iban": "DE24112233440000556677"
+      },
+      "format": "XRechnung 3.0",
+      "warnings": [],
+      "container": "xml"
+    }
+  },
+  "xrechnung-cii.xml": {
+    "status": "invoice",
+    "invoice": {
+      "syntax": "CII",
+      "spec": "urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0",
+      "type": "380",
+      "credit": false,
+      "number": "GB-2025-003",
+      "issueDate": "2025-03-03",
+      "dueDate": "2025-03-17",
+      "deliveryDate": "2025-02-28",
+      "periodStart": null,
+      "periodEnd": null,
+      "currency": "EUR",
+      "buyerReference": "Angebot vom 10.02.2025",
+      "orderReference": null,
+      "precedingInvoice": null,
+      "notes": [
+        "Gemäß § 19 UStG wird keine Umsatzsteuer berechnet."
+      ],
+      "seller": {
+        "name": "Grafikbüro Max Mustermann",
+        "address": [
+          "Malerstraße 7",
+          "12345 Musterstadt",
+          "DE"
+        ],
+        "taxNumber": "12/345/67890",
+        "contact": "Max Mustermann",
+        "phone": "+49 30 1111111",
+        "email": "max@grafikbuero.example"
+      },
+      "buyer": {
+        "name": "Musterwerkstatt Erika Mustermann",
+        "address": [
+          "Beispielweg 3",
+          "54321 Musterdorf",
+          "DE"
+        ]
+      },
+      "lines": [
+        {
+          "id": "1",
+          "name": "Logo-Entwurf, drei Varianten",
+          "quantity": "6",
+          "unit": "HUR",
+          "price": "45.00",
+          "net": 27000,
+          "vatCategory": "E",
+          "vatRate": "0"
+        }
+      ],
+      "allowances": [],
+      "vat": [
+        {
+          "category": "E",
+          "rate": "0",
+          "base": 27000,
+          "amount": 0,
+          "reason": "Kleinunternehmer gemäß § 19 UStG"
+        }
+      ],
+      "totals": {
+        "lines": 27000,
+        "net": 27000,
+        "vat": 0,
+        "gross": 27000,
+        "payable": 27000
+      },
+      "payment": {
+        "means": "58",
+        "iban": "DE31876543210009876543",
+        "reference": "GB-2025-003",
+        "terms": "Zahlbar innerhalb von 14 Tagen ohne Abzug."
+      },
+      "format": "XRechnung 3.0",
+      "warnings": [],
+      "container": "xml"
+    }
+  },
+  "zugferd-en16931.pdf": {
+    "status": "invoice",
+    "invoice": {
+      "syntax": "CII",
+      "spec": "urn:cen.eu:en16931:2017",
+      "type": "380",
+      "credit": false,
+      "number": "2025-10442",
+      "issueDate": "2025-11-20",
+      "dueDate": "2025-12-04",
+      "deliveryDate": "2025-11-18",
+      "periodStart": null,
+      "periodEnd": null,
+      "currency": "EUR",
+      "buyerReference": null,
+      "orderReference": null,
+      "precedingInvoice": null,
+      "notes": [],
+      "seller": {
+        "name": "Bürobedarf Beispiel GmbH",
+        "address": [
+          "Papierweg 5",
+          "12345 Musterstadt",
+          "DE"
+        ],
+        "vatId": "DE999999998",
+        "contact": "Kundenservice",
+        "phone": "+49 30 2222222",
+        "email": "service@buerobedarf.example"
+      },
+      "buyer": {
+        "name": "Musterwerkstatt Erika Mustermann",
+        "address": [
+          "Beispielweg 3",
+          "54321 Musterdorf",
+          "DE"
+        ]
+      },
+      "lines": [
+        {
+          "id": "1",
+          "name": "Druckerpapier A4, 500 Blatt",
+          "quantity": "5",
+          "unit": "H87",
+          "price": "4.99",
+          "net": 2495,
+          "vatCategory": "S",
+          "vatRate": "19"
+        },
+        {
+          "id": "2",
+          "name": "Fachbuch: Buchführung für Selbstständige",
+          "quantity": "1",
+          "unit": "H87",
+          "price": "24.90",
+          "net": 2490,
+          "vatCategory": "S",
+          "vatRate": "7"
+        }
+      ],
+      "allowances": [
+        {
+          "charge": true,
+          "reason": "Versand",
+          "amount": 490
+        }
+      ],
+      "vat": [
+        {
+          "category": "S",
+          "rate": "19",
+          "base": 2985,
+          "amount": 567
+        },
+        {
+          "category": "S",
+          "rate": "7",
+          "base": 2490,
+          "amount": 174
+        }
+      ],
+      "totals": {
+        "lines": 4985,
+        "allowances": 0,
+        "charges": 490,
+        "net": 5475,
+        "vat": 741,
+        "gross": 6216,
+        "prepaid": 0,
+        "payable": 6216
+      },
+      "payment": {
+        "means": "58",
+        "iban": "DE09123456780001234567",
+        "reference": "Rechnung 2025-10442",
+        "terms": "Zahlbar bis 04.12.2025."
+      },
+      "format": "EN 16931",
+      "warnings": [],
+      "container": "pdf"
+    }
+  }
+}
