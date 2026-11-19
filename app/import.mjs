@@ -162,7 +162,8 @@ export function readTable(text, { kind, fileName = "" } = {}) {
  * kept: the spreadsheet lists them twice. Nothing changes until applyImport.
  */
 export function planImport(data, tables) {
-  const existing = new Set(data.entries.map(duplicateKey));
+  // An expense made into an asset keeps the key it had as an entry.
+  const existing = new Set([...data.entries.map(duplicateKey), ...(data.assets ?? []).map((a) => a.entryKey).filter(Boolean)]);
   const plan = { entries: [], duplicates: [], newAccounts: [], closedYears: [], byYear: new Map() };
   const accounts = new Map();
   for (const table of tables) {

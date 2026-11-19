@@ -3,7 +3,6 @@
 // it was read at, so two windows never overwrite each other unseen).
 
 import {
-  HOME_OFFICE,
   MONTHS,
   amountText,
   categoryById,
@@ -16,6 +15,7 @@ import {
   groupById,
   homeOfficeRate,
   isClosed,
+  isComputedGroup,
   lineFor,
   newId,
   nextNumber,
@@ -25,15 +25,18 @@ import {
   revenueLimit,
   sortEntries,
   normalizeText,
+  upgradeData,
   yearTotals,
   years,
 } from "./books.mjs";
+import { aveurCard, drawAssets, printAssets, startAssetFromEntry } from "./assets-view.mjs";
 import { applyImport, planImport, readTable } from "./import.mjs";
 import { backupState } from "./backup.mjs";
 
 const VIEWS = [
   ["overview", "Overview"],
   ["entries", "Entries"],
+  ["assets", "Assets"],
   ["euer", "EÜR"],
   ["settings", "Settings"],
 ];
@@ -114,7 +117,7 @@ async function load() {
   if (body.error) throw new Error(body.error);
   state.revision = body.revision;
   state.paths = { file: body.file, backups: body.backups, receipts: body.receipts };
-  state.data = body.data ?? emptyData();
+  state.data = upgradeData(body.data ?? emptyData());
 }
 
 /** The backup's status. Drawn again only when it changed, such as after a
@@ -150,7 +153,7 @@ async function save() {
     const body = await response.json();
     if (response.status === 409) {
       state.revision = body.revision;
-      state.data = body.data ?? emptyData();
+      state.data = upgradeData(body.data ?? emptyData());
       toast("Changed in another window: showing that version. Make the last change again.", "bad");
       render();
       return;
@@ -198,9 +201,14 @@ function render() {
   drawYearPicker(view);
   const main = document.getElementById("main");
   const scroll = window.scrollY;
-  const views = { overview: drawOverview, entries: drawEntries, euer: drawEuer, settings: () => drawSettings(tab) };
+  const views = { overview: drawOverview, entries: drawEntries, assets: () => drawAssets(ui()), euer: drawEuer, settings: () => drawSettings(tab) };
   main.replaceChildren(h("div", {}, views[view]()));
   window.scrollTo(0, scroll);
+}
+
+/** What the views in other modules get to draw and change with. */
+function ui() {
+  return { h, card, segmented, state, change, render, toast, uploadReceipt };
 }
 
 function drawYearPicker(view) {
@@ -226,12 +234,13 @@ function setYear(year) {
 function drawOverview() {
   const t = yearTotals(state.data, state.year);
   const limit = revenueLimit(state.year + 1);
-  const share = t.income / limit;
+  const share = t.revenue / limit;
+  const yearly = [t.homeOffice ? `${euro(t.homeOffice)} home office` : null, t.assets.writeOff ? `${euro(t.assets.writeOff)} AfA, GWG` : null].filter(Boolean);
   const tiles = h(
     "div",
     { class: "tiles" },
-    tile("Income", euro(t.income), `${countOf("income")} entries`),
-    tile("Expenses", euro(t.expenses), t.homeOffice ? `incl. ${euro(t.homeOffice)} home office` : `${countOf("expense")} entries`),
+    tile("Income", euro(t.income), t.assets.sales ? `incl. ${euro(t.assets.sales)} assets sold` : `${countOf("income")} entries`),
+    tile("Expenses", euro(t.expenses), yearly.length ? `incl. ${yearly.join(", ")}` : `${countOf("expense")} entries`),
     tile("Profit", euro(t.profit), "income − expenses", t.profit < 0 ? "bad-text" : null),
     h(
       "div",
@@ -248,9 +257,20 @@ function drawOverview() {
     backup.warning ? h("p", { class: "notice" }, `${backup.warning} `, h("a", { href: "#settings/backup", text: "Settings › Backup" })) : null,
     tiles,
     card("Profit per year", yearChart(perYear), h("p", { class: "muted small", text: "Click a year to see it." })),
-    card(`${state.year} by month`, monthChart(t.months), t.homeOffice ? h("p", { class: "muted small", text: `Plus home office for the year: ${euro(t.homeOffice)}` }) : null),
+    card(`${state.year} by month`, monthChart(t.months), yearlyNote(t)),
     h("div", { class: "columns" }, categoryCard("Income by category", "income"), categoryCard("Expenses by category", "expense")),
   ];
+}
+
+/** What counts for the whole year, not in a month. */
+function yearlyNote(t) {
+  const parts = [
+    t.homeOffice ? `home office ${euro(t.homeOffice)}` : null,
+    t.assets.writeOff ? `AfA and GWG ${euro(t.assets.writeOff)}` : null,
+    t.assets.remaining ? `book value of assets gone ${euro(t.assets.remaining)}` : null,
+    t.assets.sales ? `income from assets sold ${euro(t.assets.sales)}` : null,
+  ].filter(Boolean);
+  return parts.length ? h("p", { class: "muted small", text: `Plus for the whole year: ${parts.join(" · ")}` }) : null;
 }
 
 function countOf(kind) {
@@ -570,9 +590,18 @@ function editor() {
       { class: "actions" },
       h("button", { class: "primary", type: "submit" }, "Save"),
       h("button", { type: "button", onclick: cancelEdit }, "Cancel"),
+      e.kind === "expense" ? h("button", { type: "button", title: "Something that lasts more than a year: written off as AfA or GWG instead", onclick: () => makeAsset(e) }, "Make it an asset") : null,
       e.isNew ? null : h("button", { type: "button", class: "danger push", onclick: () => deleteEntry(e.id) }, "Delete"),
     ),
   );
+}
+
+/** Opens the entry in the Assets view's form; saving it there takes the
+ *  entry out. */
+function makeAsset(entry) {
+  startAssetFromEntry(entry, entry.isNew);
+  state.editing = null;
+  location.hash = "#assets";
 }
 
 function cancelEdit() {
@@ -643,7 +672,7 @@ function drawEuer() {
     for (const row of visible) {
       out.push(h("tr", { class: "group" }, h("td", { class: "line" }, lineLabel(row.line)), h("td", { text: row.label }), h("td", { class: "num", text: euro(row.amount) })));
       for (const c of row.categories.filter((c) => c.amount !== 0)) {
-        out.push(h("tr", { class: "category" }, h("td"), h("td", { text: `${c.account} · ${c.name}` }), h("td", { class: "num muted", text: euro(c.amount) })));
+        out.push(h("tr", { class: "category" }, h("td"), h("td", { text: c.account == null ? c.name : `${c.account} · ${c.name}` }), h("td", { class: "num muted", text: euro(c.amount) })));
       }
     }
     if (unlinked.length) {
@@ -693,6 +722,7 @@ function drawEuer() {
     { class: "checks" },
     h("li", { class: t.uncategorized ? "risk-text" : "good-text", text: t.uncategorized ? `${t.uncategorized} entries without an EÜR line` : "Every entry has an EÜR line" }),
     h("li", { class: t.missingReceipts ? "muted" : "good-text", text: t.missingReceipts ? `${t.missingReceipts} entries without a receipt file` : "Every entry has a receipt file" }),
+    t.assets.missingReceipts ? h("li", { class: "muted", text: `${t.assets.missingReceipts} assets bought without a receipt file` }) : null,
     carried ? h("li", { class: "risk-text", text: `Orange line numbers are from the ${carried.line.from} form: check them against the ${state.year} form, then set them in Settings › Categories.` }) : null,
     filed !== null
       ? h("li", { class: filed === r.profit ? "good-text" : "risk-text", text: filed === r.profit ? `Matches the profit filed: ${euro(filed)}` : `Filed ${euro(filed)}: ${euro(r.profit - filed)} apart` })
@@ -710,9 +740,11 @@ function drawEuer() {
   const who = [business.name, business.taxNumber ? `Steuernummer ${business.taxNumber}` : null].filter(Boolean).join(" · ");
   return [
     card(null, head, who ? h("p", { class: "muted", text: who }) : null, closed ? h("p", { class: "notice", text: "Closed: entries of this year can't be changed." }) : null, table, checks),
+    aveurCard(ui()),
     h("div", { class: "columns no-print" }, homeOfficeCard(closed), filedCard(r, closed)),
     printList("Einnahmen", "income"),
     printList("Ausgaben", "expense"),
+    printAssets(ui()),
   ];
 }
 
@@ -837,7 +869,7 @@ function drawCategories() {
   const formYear = state.formYear ?? state.year;
   const groupOptions = (kind, value) => [
     h("option", { value: "", selected: !value, text: "No EÜR line" }),
-    ...state.data.groups.filter((g) => g.kind === kind && g.id !== HOME_OFFICE).map((g) => h("option", { value: g.id, selected: g.id === value, text: g.label })),
+    ...state.data.groups.filter((g) => g.kind === kind && !isComputedGroup(g.id)).map((g) => h("option", { value: g.id, selected: g.id === value, text: g.label })),
   ];
   const used = new Set(state.data.entries.map((e) => e.category));
   const categoryRows = (kind) =>

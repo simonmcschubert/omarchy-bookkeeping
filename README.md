@@ -34,24 +34,32 @@ data stays. `setup --backup` sets up the nightly copy to another computer
 
 ## Views
 
-- **Overview**: the year's income, expenses, profit and how close the
-  revenue is to the Kleinunternehmer limit; profit per year since the first
+- **Overview**: the year's income, expenses (with the year's AfA), profit
+  and how close the revenue is to the Kleinunternehmer limit; profit per year since the first
   entry (click a year to open it); the year by month; income and expenses by
   category.
 - **Entries**: every income and expense of a year, newest first, with its
   category, the EÜR line it counts on, and its receipt file (PDF, photo or
-  e-invoice XML). Income gets the next running number by itself.
+  e-invoice XML). Income gets the next running number by itself. An expense
+  that is really an asset becomes one with **Make it an asset**.
+- **Assets**: what was bought to last more than a year, such as a laptop or
+  a desk, with its cost, useful life, receipt and, later, the day it went
+  and its price; for each, how it is written off and its book value at the
+  end of the year.
 - **EÜR**: the Gewinnermittlung nach § 4 Abs. 3 EStG of a year, in the shape
   of the official form: each line with its number, its categories below it,
-  the home-office days, totals and profit. **Print / PDF** prints it, followed
-  by the year's income and expense lists, as the record to keep. Below: the
-  home-office days by activity, and the profit filed with the tax office, to
-  check the entries against it.
+  the home-office days, totals and profit, then what to type into Anlage
+  AVEÜR. **Print / PDF** prints it, followed by the year's income and expense
+  lists and the asset list, as the record to keep. Below: the home-office days
+  by activity, and the profit filed with the tax office, to check the entries
+  against it.
 - **Settings**: categories and their EÜR lines, the line numbers of each
   year's form, the import, the business details, and the backup: when the
   last copy to another computer was made.
 
 ![EÜR](docs/euer.png)
+
+![Assets](docs/assets.png)
 
 ## The EÜR
 
@@ -65,6 +73,34 @@ yet checked against the form.
 
 Income counts when the money arrives, and expenses when they are paid
 (Zuflussprinzip): the date of an entry is the day of payment.
+
+## Assets and AfA
+
+An asset is entered in **Assets**, not as an expense, so its price counts
+once: as AfA or GWG, spread as the rules say. Each rule, with its source
+(EStG, EStR, BMF letters, the 2025 and 2026 forms), is written out at the top
+of `app/assets.mjs`. In short:
+
+- The cost is what was paid, VAT included: a Kleinunternehmer can't deduct
+  the VAT. Whether something is a GWG is still decided on the price without
+  VAT (R 9b Abs. 2 EStR), so each asset has the VAT rate of its invoice.
+- Up to 800 € net, if it can be used on its own: a GWG (geringwertiges
+  Wirtschaftsgut), deducted in full in the year bought, on its own line.
+- Computers, their accessories and software bought from 2021: one year of
+  useful life, deducted in full in the year bought (BMF, 22.02.2022), on the
+  AfA line. Monitors and printers are never GWG; this covers them.
+- Anything else: AfA in equal amounts over its useful life from the official
+  AfA table, by month in the first year.
+- When it goes: AfA up to that month, then the book value left is an
+  expense and the price is income. Sales don't count for the revenue limit.
+
+The asset lines (Veräußerung von Anlagevermögen, AfA, GWG, Restbuchwerte)
+come with their numbers from the 2025 and 2026 forms. The EÜR page lists what
+goes into **Anlage AVEÜR** (Anlageverzeichnis), which belongs to the EÜR
+whenever there is AfA; GWG don't go in it. The pool for 250 to 1.000 €
+(Sammelposten) is left out: it would only help with things of 800 to 1.000 €
+that aren't computers, and would slow down everything of 250 to 800 € bought
+the same year.
 
 **Close year**, after filing, keeps the year's entries from being changed by
 mistake; **Reopen year** allows it again.
@@ -147,7 +183,9 @@ To go back to an earlier version, copy it from the server over
 - Invoices as ZUGFeRD e-invoices (a normal PDF with the invoice data inside),
   marked paid to become income
 - Reading received e-invoices (ZUGFeRD, XRechnung) into expenses
-- Assets and their depreciation (AfA)
+- For assets: the declining-balance AfA for things bought from July 2025 to
+  2027, special AfA (§ 7g), cars, things brought in from private property
+  (Einlage), private use of an asset, and the Sammelposten
 - An update button, as in Finance
 
 ## Development
