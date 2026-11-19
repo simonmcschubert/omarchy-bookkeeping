@@ -396,43 +396,49 @@ function keptValidation(ui, report) {
  *  and only when it passed, keeps it. Returns the issued invoice or null. */
 async function issueWithPdf(ui, issued, onProblem, onKept) {
   const s = local(ui);
-  s.busy = true;
+  s.busy = true; // until it is saved or not kept: the form stays as it is
   ui.render();
-  let result;
   try {
-    // Counted as sending, its answer too: an update's restart waits for it
-    // (update.mjs), and the save below follows with no wait between.
-    result = await ui.sent(makePdf(issued));
-  } catch (error) {
-    result = { ok: false, status: 0, body: { error: error.message } };
+    let result;
+    try {
+      // Counted as sending, its answer too: an update's restart waits for
+      // it (update.mjs), and the save below follows with no wait between.
+      result = await ui.sent(makePdf(issued));
+    } catch (error) {
+      result = { ok: false, status: 0, body: { error: error.message } };
+    }
+    if (result.status === 422) {
+      onProblem(["The e-invoice did not pass the check, so it was not kept. What the validator found:"], result.body.validation);
+      return null;
+    }
+    if (!result.ok) {
+      onProblem([`No PDF: ${result.body.error ?? "the server did not answer"}`], null);
+      return null;
+    }
+    const problems = keepProblems(ui.state.data, issued);
+    if (problems.length) {
+      onProblem(problems, null);
+      return null;
+    }
+    const pdf = { file: result.body.file, name: invoiceFileName(issued) };
+    const validation = keptValidation(ui, result.body.validation);
+    await ui.change((data) => {
+      issueInvoice(data, issued, { pdf, validation, today: ui.todayIso() });
+    });
+    // A save that met a change from another window shows that version
+    // instead: this one is issued only if its own PDF is in it.
+    const kept = (ui.state.data.invoices ?? []).find((i) => i.id === issued.id);
+    if (kept?.pdf?.file !== pdf.file) {
+      const elsewhere = kept && kept.status !== "draft" ? kept : null;
+      onProblem([elsewhere ? `Not issued here: another window issued it meanwhile, as No. ${elsewhere.number}.` : "Not issued: the data changed in another window meanwhile. Issue it again."], null, elsewhere);
+      return null;
+    }
+    onKept();
+    return issued;
+  } finally {
+    s.busy = false;
+    ui.render();
   }
-  s.busy = false;
-  if (result.status === 422) {
-    onProblem(["The e-invoice did not pass the check, so it was not kept. What the validator found:"], result.body.validation);
-    return null;
-  }
-  if (!result.ok) {
-    onProblem([`No PDF: ${result.body.error ?? "the server did not answer"}`], null);
-    return null;
-  }
-  const problems = keepProblems(ui.state.data, issued);
-  if (problems.length) {
-    onProblem(problems, null);
-    return null;
-  }
-  const pdf = { file: result.body.file, name: invoiceFileName(issued) };
-  const validation = keptValidation(ui, result.body.validation);
-  onKept();
-  await ui.change((data) => {
-    issueInvoice(data, issued, { pdf, validation, today: ui.todayIso() });
-  });
-  // A save that met a change from another window shows that version
-  // instead, without this invoice: then it is not issued.
-  if (!(ui.state.data.invoices ?? []).some((i) => i.id === issued.id && i.status !== "draft")) {
-    onProblem(["Not issued: the data changed in another window meanwhile. Issue it again."], null);
-    return null;
-  }
-  return issued;
 }
 
 async function issue(ui) {
@@ -451,12 +457,18 @@ async function issue(ui) {
     ui.render();
     return;
   }
-  const form = s.editing;
   const done = await issueWithPdf(
     ui,
     issued,
-    (problems, report) => {
-      s.editing ??= form; // back, as typed, when it was not kept
+    (problems, report, elsewhere) => {
+      if (elsewhere) {
+        // Issued in another window: show that one instead of the form.
+        s.editing = null;
+        s.open = elsewhere.id;
+        ui.state.year = Number(elsewhere.date.slice(0, 4));
+      } else if (!s.editing.isNew && !ui.state.data.invoices?.some((i) => i.id === s.editing.id)) {
+        s.editing.isNew = true; // its draft was deleted in another window
+      }
       s.problems = problems;
       s.report = report;
       ui.render();
@@ -586,7 +598,6 @@ async function cancelInvoice(ui, invoice) {
     ui,
     issued,
     (p, report) => {
-      s.open = invoice.id;
       s.problems = p;
       s.report = report;
       ui.render();
