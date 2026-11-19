@@ -26,3 +26,33 @@ jobs:
 
       - name: Shell scripts
         run: shellcheck setup backup update
+
+  # Makes real ZUGFeRD invoices and has the Mustang validator check them:
+  # Chrome and Java come with the runner, pikepdf from PyPI, Mustang through
+  # setup (checked against its SHA-256).
+  invoices:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+
+      - name: pikepdf
+        run: |
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install --quiet pikepdf==10.18.2
+          echo "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
+
+      - name: Mustang validator
+        run: ./setup --invoice-tools
+
+      - name: Invoice PDFs, made and validated
+        env:
+          # Ubuntu's AppArmor blocks Chrome's sandbox; Omarchy keeps it.
+          BOOKKEEPING_CHROMIUM_NO_SANDBOX: "1"
+          BOOKKEEPING_REQUIRE_TOOLS: "1"
+        run: |
+          python3 -m unittest discover -s test -p "test_invoice_pdf.py" -v
+          node --test test/invoice-pdf.test.mjs

@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 # Installs Bookkeeping on Omarchy: a user service that runs the local server
-# at login, and a "Bookkeeping" web app in the app launcher with a browser
-# profile of its own. Running it again after a `git pull` restarts the
-# server with the new code.
-# `setup --remove` takes both out again; the data and receipts stay.
+# at login, a "Bookkeeping" web app in the app launcher with a browser
+# profile of its own, and what invoices need (see install_invoice_tools).
+# Running it again after a `git pull` restarts the server with the new code.
+# `setup --remove` takes it out again; the data and receipts stay.
 #
 # `setup --backup [user@]host:path` copies the data and receipts to another
 # computer every night: a user timer runs the `backup` script (see there).
 # `setup --no-backup` stops that; the copies there stay.
+# `setup --invoice-tools` installs only what invoices need (CI uses it).
 set -euo pipefail
 
 NAME=Bookkeeping
@@ -28,6 +29,14 @@ BACKUP_UNIT=omarchy-bookkeeping-backup
 # The window's browser profile: no extensions, and nothing shared with
 # everyday browsing.
 PROFILE="$STATE_DIR/browser"
+# Invoices: Chromium prints them, pikepdf (Python) makes the PDF a ZUGFeRD
+# e-invoice and the Mustang validator (Java) checks each one. Chromium,
+# Java and pikepdf come from pacman; Mustang is one file from Maven
+# Central, checked against its SHA-256 before it is used.
+MUSTANG_VERSION=2.26.0
+MUSTANG_SHA256=42d7868cb68264874a7b8cab4c3587b03b23ccc7cd72373da917f66758bb9736
+MUSTANG_URL="https://repo1.maven.org/maven2/org/mustangproject/Mustang-CLI/$MUSTANG_VERSION/Mustang-CLI-$MUSTANG_VERSION.jar"
+MUSTANG_JAR="$DIR/tools/mustang-cli.jar"
 
 fail() {
   echo "setup: $*" >&2
@@ -40,6 +49,7 @@ Usage: setup                               install, or update after git pull
        setup --remove                      take the service and launcher entry out
        setup --backup [user@]host:path     copy the data and receipts there every night
        setup --no-backup                   stop the nightly copy
+       setup --invoice-tools               install only what invoices need
 USAGE
 }
 
@@ -134,8 +144,10 @@ set_backup() {
   esac
 }
 
+TOOLS_ONLY=false
 case ${1:-} in
   "") ;;
+  --invoice-tools) TOOLS_ONLY=true ;;
   --remove)
     systemctl --user disable --now "$UNIT" 2>/dev/null || true
     rm -f "$UNIT_FILE"
@@ -143,8 +155,8 @@ case ${1:-} in
     if command -v omarchy-webapp-remove >/dev/null; then
       OMARCHY_REMOVE_NOTIFY=false omarchy-webapp-remove "$NAME" || true
     fi
-    rm -rf "$PROFILE"
-    echo "Removed Bookkeeping's service, launcher entry and nightly copy. The data and receipts stay in $STATE_DIR."
+    rm -rf "$PROFILE" "$DIR/tools"
+    echo "Removed Bookkeeping's service, launcher entry, nightly copy and Mustang validator. The data and receipts stay in $STATE_DIR."
     exit 0
     ;;
   --backup)
@@ -168,9 +180,61 @@ case ${1:-} in
     ;;
 esac
 
-command -v omarchy-webapp-install >/dev/null || fail "omarchy-webapp-install not found; is this Omarchy?"
 PYTHON=$(command -v python3) || fail "python3 not found"
 "$PYTHON" -c 'import sys; sys.exit(sys.version_info < (3, 11))' || fail "Bookkeeping needs Python 3.11 or newer"
+
+have_chromium() {
+  local name
+  for name in chromium chromium-browser google-chrome-stable google-chrome; do
+    command -v "$name" >/dev/null && return 0
+  done
+  return 1
+}
+
+# The packages invoices need, from pacman: asks for sudo only when one is
+# missing. The server's Python (the one this runs) must import pikepdf.
+install_invoice_packages() {
+  local missing=()
+  have_chromium || missing+=(chromium)
+  command -v java >/dev/null || missing+=(jre-openjdk-headless)
+  "$PYTHON" -c 'import pikepdf' 2>/dev/null || missing+=(python-pikepdf)
+  ((${#missing[@]})) || return 0
+  if ! command -v pacman >/dev/null; then
+    echo "setup: invoices need ${missing[*]}: install them, then run setup again." >&2
+    return 1
+  fi
+  echo "Invoices need ${missing[*]}. Installing them with pacman (sudo):"
+  sudo pacman -S --needed --noconfirm "${missing[@]}"
+}
+
+# Downloads the Mustang validator into tools/ (not in git), again only when
+# its version changes.
+fetch_mustang() {
+  if [[ -f $MUSTANG_JAR ]] && sha256sum --status -c <<<"$MUSTANG_SHA256  $MUSTANG_JAR"; then
+    return 0
+  fi
+  echo "Downloading the Mustang validator $MUSTANG_VERSION (about 60 MB)..."
+  mkdir -p "${MUSTANG_JAR%/*}"
+  curl -fsSL --retry 3 -o "$MUSTANG_JAR.part" "$MUSTANG_URL" || return 1
+  if ! sha256sum --status -c <<<"$MUSTANG_SHA256  $MUSTANG_JAR.part"; then
+    rm -f "$MUSTANG_JAR.part"
+    echo "setup: the Mustang download does not match its checksum; not used" >&2
+    return 1
+  fi
+  mv "$MUSTANG_JAR.part" "$MUSTANG_JAR"
+}
+
+install_invoice_tools() {
+  install_invoice_packages && fetch_mustang
+}
+
+if $TOOLS_ONLY; then
+  install_invoice_tools || fail "the invoice tools are not complete"
+  echo "Invoice tools ready: Chromium, Java, pikepdf and $MUSTANG_JAR"
+  exit 0
+fi
+
+command -v omarchy-webapp-install >/dev/null || fail "omarchy-webapp-install not found; is this Omarchy?"
 [[ $DIR != *[[:space:]\"\\%]* ]] || fail "move the repository to a path without spaces, quotes, backslashes or %"
 [[ $PROFILE != *[[:space:]\"\\%]* ]] || fail "Bookkeeping needs a state directory without spaces, quotes, backslashes or %: $STATE_DIR"
 
@@ -189,6 +253,10 @@ UNIT_EOF
 
 mkdir -p "$STATE_DIR"
 chmod 700 "$STATE_DIR"
+
+# Without these, all but invoice PDFs works; the Invoices view says what
+# is missing.
+install_invoice_tools || echo "setup: invoices can't be made into PDFs until this works: run setup again." >&2
 
 systemctl --user daemon-reload
 systemctl --user enable "$UNIT" >/dev/null
