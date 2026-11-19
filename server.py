@@ -42,6 +42,8 @@ STATIC = {
     "/books.mjs": ("books.mjs", "text/javascript; charset=utf-8"),
     "/import.mjs": ("import.mjs", "text/javascript; charset=utf-8"),
     "/backup.mjs": ("backup.mjs", "text/javascript; charset=utf-8"),
+    "/assets.mjs": ("assets.mjs", "text/javascript; charset=utf-8"),
+    "/assets-view.mjs": ("assets-view.mjs", "text/javascript; charset=utf-8"),
     "/icon.svg": ("icon.svg", "image/svg+xml"),
 }
 

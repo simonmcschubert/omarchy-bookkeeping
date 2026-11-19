@@ -2,6 +2,8 @@
 // node --test can check all of it. Amounts are whole cents; dates are
 // ISO strings (2025-01-15). See CONTEXT.md for the words used.
 
+import { assetDates, assetsInYear } from "./assets.mjs";
+
 export const VERSION = 1; // data file version; matches VERSION in server.py
 
 // The yearly revenue a Kleinunternehmer may have had in the year before
@@ -41,6 +43,27 @@ const SEED_GROUPS = [
   ["expense", "Tagespauschale für die Tätigkeit in der häuslichen Wohnung", 66, HOME_OFFICE],
 ];
 
+// The lines the assets' amounts go on (assets.mjs). Their amounts come from
+// the assets, so no category links to them. Line numbers from the official
+// forms: 2025 (BMF-Schreiben of 29.08.2025) and 2026 (of 01.09.2026), where
+// a new line 27 moved the expense lines down by one.
+const ASSET_GROUPS = [
+  ["income", "Veräußerung oder Entnahme von Anlagevermögen", { 2025: 19, 2026: 19 }, "asset-sales"],
+  ["expense", "AfA auf immaterielle Wirtschaftsgüter", { 2025: 32, 2026: 33 }, "afa-intangible"],
+  ["expense", "AfA auf bewegliche Wirtschaftsgüter", { 2025: 33, 2026: 34 }, "afa-movable"],
+  ["expense", "Aufwendungen für geringwertige Wirtschaftsgüter nach § 6 Abs. 2 EStG", { 2025: 36, 2026: 37 }, "gwg"],
+  ["expense", "Restbuchwerte der ausgeschiedenen Anlagegüter", { 2025: 38, 2026: 39 }, "remaining-value"],
+];
+
+export const ASSET_LINES = ASSET_GROUPS.map(([, , , id]) => id);
+
+/** Lines whose amounts don't come from categories. */
+export function isComputedGroup(id) {
+  return id === HOME_OFFICE || ASSET_LINES.includes(id);
+}
+
+const seedGroup = ([kind, label, line, id]) => ({ id, kind, label, lines: typeof line === "number" ? { [FORM_YEAR]: line } : { ...line } });
+
 const SEED_CATEGORIES = [
   ["income", 1, "Affiliate-Partnerschaft", "ku-income"],
   ["income", 2, "Einnahmen aus Lizenzvertrag", "ku-income"],
@@ -69,7 +92,7 @@ export function emptyData() {
   return {
     version: VERSION,
     business: { name: "", address: "", taxNumber: "", iban: "" },
-    groups: SEED_GROUPS.map(([kind, label, line, id]) => ({ id, kind, label, lines: { [FORM_YEAR]: line } })),
+    groups: [...SEED_GROUPS, ...ASSET_GROUPS].map(seedGroup),
     categories: SEED_CATEGORIES.map(([kind, account, name, group]) => ({
       id: categoryId(kind, account),
       kind,
@@ -78,10 +101,19 @@ export function emptyData() {
       group,
     })),
     entries: [],
+    assets: [],
     homeOffice: {},
     filed: {},
     closed: [],
   };
+}
+
+/** A data file as this version uses it: files from before the assets get
+ *  the asset lines of the EÜR. A missing asset list means none. */
+export function upgradeData(data) {
+  const missing = ASSET_GROUPS.filter(([, , , id]) => !data.groups.some((g) => g.id === id));
+  if (!missing.length) return data;
+  return { ...data, groups: [...data.groups, ...missing.map(seedGroup)] };
 }
 
 // ---- amounts and dates
@@ -202,6 +234,7 @@ export function years(data, now = new Date()) {
   const set = new Set(data.entries.map(yearOf));
   set.add(now.getFullYear());
   for (const y of Object.keys(data.homeOffice ?? {})) set.add(Number(y));
+  for (const y of assetDates(data, now.getFullYear())) set.add(y);
   return [...set].sort((a, b) => b - a);
 }
 
@@ -229,7 +262,9 @@ export function homeOfficeAmount(data, year) {
 
 // ---- the numbers of a year
 
-/** Income, expenses and profit of a year, by month and category. */
+/** Income, expenses and profit of a year, by month and category. Months
+ *  and categories hold the entries; the home office and the assets'
+ *  amounts count for the whole year. */
 export function yearTotals(data, year) {
   const months = Array.from({ length: 12 }, () => ({ income: 0, expenses: 0 }));
   const byCategory = new Map();
@@ -254,14 +289,25 @@ export function yearTotals(data, year) {
     if (!categoryById(data, entry.category)?.group) uncategorized += 1;
   }
   const homeOffice = homeOfficeAmount(data, year);
-  const allExpenses = expenses + homeOffice;
+  const assets = assetsInYear(data, year);
+  const allIncome = income + assets.sales;
+  const allExpenses = expenses + homeOffice + assets.expenses;
   return {
     year,
-    income,
+    income: allIncome,
+    // What counts for the Kleinunternehmer limit: sales of assets don't
+    // (§ 19 Abs. 2 UStG, see assets.mjs).
+    revenue: income,
     expenses: allExpenses,
     entryExpenses: expenses,
     homeOffice,
-    profit: income - allExpenses,
+    assets: {
+      writeOff: assets.writeOff,
+      remaining: assets.lines["remaining-value"],
+      sales: assets.sales,
+      missingReceipts: assets.rows.filter((r) => r.added && !r.asset.receipt).length,
+    },
+    profit: allIncome - allExpenses,
     months,
     byCategory,
     missingReceipts,
@@ -292,9 +338,15 @@ export function categoryTotals(data, year, kind) {
     const category = categoryById(data, id);
     rows.push({ id, name: category ? category.name : "No category", amount });
   }
+  const assets = assetsInYear(data, year);
   if (kind === "expense") {
     const homeOffice = homeOfficeAmount(data, year);
     if (homeOffice) rows.push({ id: HOME_OFFICE, name: "Home office (Tagespauschale)", amount: homeOffice });
+    if (assets.writeOff) rows.push({ id: "assets", name: "Assets (AfA, GWG)", amount: assets.writeOff });
+    const remaining = assets.lines["remaining-value"];
+    if (remaining) rows.push({ id: "remaining-value", name: "Assets gone (Restbuchwert)", amount: remaining });
+  } else if (assets.sales) {
+    rows.push({ id: "asset-sales", name: "Assets sold", amount: assets.sales });
   }
   return rows.sort((a, b) => b.amount - a.amount);
 }
@@ -303,15 +355,17 @@ export function categoryTotals(data, year, kind) {
 
 /**
  * The year's Gewinnermittlung nach § 4 Abs. 3 EStG, in the shape of Simon's
- * spreadsheet: for income and expenses, each form line with its categories.
- * Entries whose category has no line land in `unlinked`, so they are seen.
+ * spreadsheet: for income and expenses, each form line with its categories,
+ * in the order of the form. Entries whose category has no line land in
+ * `unlinked`, so they are seen. The assets' lines list the assets in place
+ * of categories (with no account).
  */
 export function euer(data, year) {
   const sides = { income: new Map(), expense: new Map() };
   const unlinked = { income: [], expense: [] };
-  for (const group of data.groups) {
+  for (const group of upgradeData(data).groups) {
     if (group.id === HOME_OFFICE) continue;
-    sides[group.kind].set(group.id, { group, line: lineFor(group, year), amount: 0, categories: new Map() });
+    sides[group.kind].set(group.id, { group, line: lineFor(group, year), amount: 0, categories: new Map(), assets: [] });
   }
   for (const entry of data.entries) {
     if (yearOf(entry) !== year) continue;
@@ -324,16 +378,34 @@ export function euer(data, year) {
     row.amount += entry.amount;
     row.categories.set(category.id, (row.categories.get(category.id) ?? 0) + entry.amount);
   }
+  for (const { asset, how, afa, gwg, remaining, sale } of assetsInYear(data, year).rows) {
+    const parts = [
+      [sides.expense.get(how.line), afa + gwg],
+      [sides.expense.get("remaining-value"), remaining],
+      [sides.income.get("asset-sales"), sale],
+    ];
+    for (const [row, amount] of parts) {
+      if (!amount) continue;
+      row.amount += amount;
+      row.assets.push({ id: asset.id, account: null, name: asset.name, amount });
+    }
+  }
+  const byLine = (a, b) => (a.line?.line ?? 1e9) - (b.line?.line ?? 1e9);
   const toRows = (map) =>
-    [...map.values()].map((row) => ({
-      id: row.group.id,
-      label: row.group.label,
-      line: row.line,
-      amount: row.amount,
-      categories: data.categories
-        .filter((c) => c.group === row.group.id && c.kind === row.group.kind)
-        .map((c) => ({ id: c.id, account: c.account, name: c.name, amount: row.categories.get(c.id) ?? 0 })),
-    }));
+    [...map.values()]
+      .map((row) => ({
+        id: row.group.id,
+        label: row.group.label,
+        line: row.line,
+        amount: row.amount,
+        categories: [
+          ...data.categories
+            .filter((c) => c.group === row.group.id && c.kind === row.group.kind)
+            .map((c) => ({ id: c.id, account: c.account, name: c.name, amount: row.categories.get(c.id) ?? 0 })),
+          ...row.assets,
+        ],
+      }))
+      .sort(byLine);
   const income = toRows(sides.income);
   const expenses = toRows(sides.expense);
   const homeGroup = groupById(data, HOME_OFFICE);

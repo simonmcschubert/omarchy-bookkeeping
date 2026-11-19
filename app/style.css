@@ -688,6 +688,30 @@ table.euer tr.profit td {
   margin: 0;
 }
 
+/* ---- assets */
+
+.editor .preview {
+  margin: 0;
+  padding: 8px 10px;
+  background: var(--surface);
+  border-radius: 6px;
+}
+
+tr.dim > td {
+  color: var(--fg-muted);
+}
+
+.rules {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 4px;
+}
+
+table.aveur tr.muted-row td {
+  color: var(--fg-muted);
+}
+
 /* ---- toast */
 
 .toast {
@@ -722,6 +746,10 @@ table.euer tr.profit td {
 
   .print-only h2 {
     margin-bottom: 8px;
+  }
+
+  .print-break {
+    break-before: page;
   }
 
   :root {
@@ -764,6 +792,7 @@ table.euer tr.profit td {
   .muted,
   .sub,
   table.euer td.line,
+  table.aveur tr.muted-row td,
   thead th {
     color: #555;
   }
