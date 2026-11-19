@@ -4,7 +4,8 @@
 Listens on 127.0.0.1 only. The data lives in one JSON file,
 ~/.local/state/omarchy-bookkeeping/bookkeeping.json, in a directory only the
 owner can open; receipt files sit next to it in receipts/, named by their
-content. The page's colors come from the current Omarchy theme.
+content, and e-invoices among them are read for the page (einvoice_reader).
+The page's colors come from the current Omarchy theme.
 
 Python standard library only (3.11 or newer).
 """
@@ -20,7 +21,10 @@ import sys
 import tempfile
 import threading
 import tomllib
+import traceback
 from pathlib import Path
+
+import einvoice_reader
 
 PORT = 47221
 APP_DIR = Path(__file__).resolve().parent / "app"
@@ -44,6 +48,8 @@ STATIC = {
     "/backup.mjs": ("backup.mjs", "text/javascript; charset=utf-8"),
     "/assets.mjs": ("assets.mjs", "text/javascript; charset=utf-8"),
     "/assets-view.mjs": ("assets-view.mjs", "text/javascript; charset=utf-8"),
+    "/einvoice.mjs": ("einvoice.mjs", "text/javascript; charset=utf-8"),
+    "/einvoice.css": ("einvoice.css", "text/css; charset=utf-8"),
     "/icon.svg": ("icon.svg", "image/svg+xml"),
 }
 
@@ -199,6 +205,16 @@ def back_up(data_file, raw):
         old.unlink(missing_ok=True)
 
 
+def read_einvoice(body, ext):
+    """What einvoice_reader finds in a receipt file. An error in the reader
+    is logged and said, so the file still works as a plain receipt."""
+    try:
+        return einvoice_reader.read_receipt(body, ext)
+    except Exception:
+        traceback.print_exc(file=sys.stderr)
+        return {"status": "problem", "message": "The app failed to read this file as an e-invoice (see the server log)."}
+
+
 def luminance_is_light(color):
     value = color.lstrip("#")
     if len(value) == 3:
@@ -308,6 +324,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.send_json(200, {"status": status, "setup": home_short(SETUP_SCRIPT), "backup": home_short(BACKUP_SCRIPT)})
         elif path.startswith("/api/receipts/"):
             self.get_receipt(path.removeprefix("/api/receipts/"))
+        elif path.startswith("/api/einvoice/"):
+            self.get_einvoice(path.removeprefix("/api/einvoice/"))
         elif path == "/theme.css":
             body = theme_css(self.server.theme_path).encode()
             self.send_body(200, body, "text/css; charset=utf-8")
@@ -346,6 +364,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return
         served = SERVED_TYPES[name.rsplit(".", 1)[1]]
         self.send_body(200, body, served, {"Content-Disposition": f'inline; filename="{name}"'})
+
+    def get_einvoice(self, name):
+        """The receipt read as an e-invoice, for the page to show: the XML
+        itself is only ever served as plain text."""
+        body = read_file(receipt_dir(self.server.data_file) / name) if RECEIPT_NAME.match(name) else None
+        if body is None:
+            self.send_json(404, {"error": "Not found"})
+            return
+        self.send_json(200, read_einvoice(body, name.rsplit(".", 1)[1]))
 
     def read_body(self, limit):
         """The request's body, or NO_BODY after replying with the problem."""
@@ -401,7 +428,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.log_error("saving a receipt failed: %s", error)
             self.send_json(500, {"error": f"Could not save: {error.strerror}"})
             return
-        self.send_json(200, {"file": name, "size": len(body)})
+        self.send_json(200, {"file": name, "size": len(body), "einvoice": read_einvoice(body, ext)})
 
     def do_PUT(self):
         if not self.allowed():
