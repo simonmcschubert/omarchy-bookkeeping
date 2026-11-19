@@ -28,10 +28,64 @@ git clone https://github.com/simonmcschubert/omarchy-bookkeeping.git ~/.local/sh
 `setup` adds a user service (`omarchy-bookkeeping.service`) that runs the
 server at login on `http://127.0.0.1:47221/`, and a "Bookkeeping" entry in
 the app launcher (`Super+Space`). The server reads the code from the cloned
-directory, so keep it where it is. To update: `git pull`, then `setup`
-again. `setup --remove` takes the service and the launcher entry out; the
-data stays. `setup --backup` sets up the nightly copy to another computer
-(see [Backup](#backup)).
+directory, so keep it where it is. It updates itself: see
+[Update](#update). `setup --remove` takes the service and the launcher entry
+out; the data stays. `setup --backup` sets up the nightly copy to another
+computer (see [Backup](#backup)).
+
+## Update
+
+Bookkeeping looks for a new release 15 seconds after its server starts and
+every four hours. The update button, a circle of arrows at the right end of
+the top bar, checks now when clicked; hover it to see the installed version.
+When there is a release, the button turns into a down arrow with **Update**.
+One click downloads and installs it: Bookkeeping waits for any change still
+being saved, restarts its server with the release and reloads the window. A
+release downloaded otherwise (`update download` in a terminal, or a window
+closed while it downloaded) shows **Restart to update** instead, which
+installs it the same way. When the new server does not answer, Bookkeeping
+goes back to the version it had. A notification confirms the update or says
+why it failed. When it fails before the restart (local changes in the
+checkout, for example), the button says **Update failed** and why, when
+hovered. Like `git pull`, this does not show the changes first; the release
+notes on GitHub list them.
+
+![The update button: check, Update, Downloading, Updating, Up to date, Update failed](docs/update.png)
+
+Updates never touch the data: they change only the code in the cloned
+directory, not the data file, its daily copies or the receipts. They never
+go back to an older version either, because an older version could lose what
+a newer one saved. A data file saved by a newer version stays closed in an
+older one, which says so instead of showing it, so nothing is saved over it.
+
+Settings › Updates chooses which updates the button offers. **Stable**, the
+default, offers releases. **Preview** offers every change on `main` as soon
+as CI has passed for it, days or weeks before it is released: new features
+first, and now and then a new bug. A preview is named by its commit, such as
+`preview 1a2b3c4`, and the installed version then reads `0.2.0-3-g1a2b3c4`:
+three commits past 0.2.0. Previews have no release notes; the commits on
+GitHub list the changes. Back on Stable, Bookkeeping keeps the version it
+has until a release is newer. Before the first release, Stable offers
+nothing.
+
+![Settings › Updates: Stable or Preview](docs/update-channel.png)
+
+Looking for updates asks the repository Bookkeeping was cloned from (GitHub)
+for its tags, and on Preview for its `preview` branch. Nothing about the data
+is sent.
+
+The same from a terminal:
+
+```bash
+~/.local/share/omarchy-bookkeeping/update check
+~/.local/share/omarchy-bookkeeping/update install 0.2.0
+~/.local/share/omarchy-bookkeeping/update channel preview   # or stable
+```
+
+`git -C ~/.local/share/omarchy-bookkeeping pull && ~/.local/share/omarchy-bookkeeping/setup`
+works too. It takes the newest commit on `main`, released or not. Run
+`setup` again after an update when the release notes say so, for changes to
+the service or the launcher entry.
 
 ## Views
 
@@ -56,8 +110,8 @@ data stays. `setup --backup` sets up the nightly copy to another computer
   by activity, and the profit filed with the tax office, to check the entries
   against it.
 - **Settings**: categories and their EÜR lines, the line numbers of each
-  year's form, the import, the business details, and the backup: when the
-  last copy to another computer was made.
+  year's form, the import, the business details, the backup (when the last
+  copy to another computer was made), and which updates to offer.
 
 ![EÜR](docs/euer.png)
 
@@ -170,6 +224,8 @@ years go in by hand on the EÜR page.
 - `…/backup-status`: the result of the last backup;
   `~/.config/omarchy-bookkeeping/backup.conf`: where it goes
 
+Updates leave all of it as it is ([Update](#update)).
+
 ## Backup
 
 Once a day, Bookkeeping can copy the data, its daily copies and the receipts
@@ -221,13 +277,12 @@ To go back to an earlier version, copy it from the server over
 - For assets: the declining-balance AfA for things bought from July 2025 to
   2027, special AfA (§ 7g), cars, things brought in from private property
   (Einlage), private use of an asset, and the Sammelposten
-- An update button, as in Finance
 
 ## Development
 
 ```bash
-node --test                               # app logic and import
-python3 -m unittest discover -s test -v   # server, backup script, setup --backup
+node --test                               # app logic, import, backup status, update button, update script
+python3 -m unittest discover -s test -v   # server, backup script, setup --backup, updates.py
 python3 server.py --port 47321 --data /tmp/books.json   # try it
 python3 test/einvoice_samples.py          # rewrites the sample e-invoices
 ```
@@ -237,3 +292,42 @@ CII, a credit note, a ZUGFeRD PDF) to drop on the Entries page.
 
 The app is plain JavaScript modules and a Python standard-library server
 (e-invoices too, PDFs included); no build step. `CONTEXT.md` lists the words the code uses.
+
+```text
+server.py          # page, /api/data, receipts, daily backups, /theme.css, /api/backup, /api/einvoice, /api/update
+einvoice_reader.py # reads received e-invoices (XML or ZUGFeRD PDF)
+updates.py         # the Updater behind /api/update: runs the update script
+update             # finds, downloads and installs releases or previews
+backup             # the nightly copy to another computer
+app/
+├── app.mjs        # the views; saves every change
+├── books.mjs      # data, EÜR and numbers (no DOM)
+├── assets.mjs     # assets and their AfA (no DOM)
+├── assets-view.mjs # the Assets view and the asset parts of the EÜR
+├── einvoice.mjs   # received e-invoices: the expense and the readable view (no DOM)
+├── import.mjs     # the spreadsheet import (no DOM)
+├── backup.mjs     # the backup's status (no DOM)
+└── update.mjs     # the update button, and the channel in Settings › Updates
+setup              # user service, launcher entry and backup timer; --remove undoes
+```
+
+The update button, `updates.py`, `update` and the Release and Preview
+workflows are Finance's, with Bookkeeping's names, port and unit; a change to
+one belongs in the other too. The tests of `update` run it against real git
+repositories, with stand-ins for `systemctl` and `curl`. A server started as
+above offers updates too, but `update install` refuses a checkout that
+`omarchy-bookkeeping.service` does not run, so installing one fails there.
+
+## Releases
+
+Actions › Release › Run workflow, with patch, minor, or major; the first
+release starts from 0.0.0, so minor gives 0.1.0. The workflow tags the `main`
+commit that passed CI as `vX.Y.Z` and creates the GitHub Release with notes
+from the merged pull requests. The tags hold the version (`update version`);
+no file does. Installed copies offer the release within four hours. "Release
+candidate" publishes `vX.Y.Z-rc.N`, which they do not offer, and "Dry run"
+shows the version and notes without publishing.
+
+Previews need no step: once CI passes for a commit pushed to `main`, the
+Preview workflow fast-forwards the `preview` branch to it, and copies on
+Preview offer it within four hours.

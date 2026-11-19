@@ -6,6 +6,18 @@ import { assetDates, assetsInYear } from "./assets.mjs";
 
 export const VERSION = 1; // data file version; matches VERSION in server.py
 
+/** Why this version of Bookkeeping can't open the data file, or "". A file
+ * saved by a newer version may hold what this one would lose on its next
+ * save, so it stays closed; updates never go back to an older version
+ * (README, "Update"). New fields keep the version: missing means empty. */
+export function unreadable(data) {
+  const version = data?.version;
+  if (Number.isInteger(version) && version > VERSION) {
+    return `it was saved by a newer version of Bookkeeping (data version ${version}; this one reads version ${VERSION}). Update Bookkeeping (the button at the top right) to open it.`;
+  }
+  return "";
+}
+
 // The yearly revenue a Kleinunternehmer may have had in the year before
 // (§ 19 UStG). From 2025 the current year may also not pass 100.000 €.
 export function revenueLimit(year) {

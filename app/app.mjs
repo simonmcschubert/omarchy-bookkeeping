@@ -25,6 +25,7 @@ import {
   revenueLimit,
   sortEntries,
   normalizeText,
+  unreadable,
   upgradeData,
   yearTotals,
   years,
@@ -33,6 +34,7 @@ import { aveurCard, drawAssets, printAssets, startAssetFromEntry } from "./asset
 import { applyImport, planImport, readTable } from "./import.mjs";
 import { backupState } from "./backup.mjs";
 import { RECEIPT_ACCEPT, expenseFromInvoice, hasInvoiceView, invoiceSummary, invoiceView } from "./einvoice.mjs";
+import { startUpdates } from "./update.mjs";
 
 const VIEWS = [
   ["overview", "Overview"],
@@ -46,6 +48,7 @@ const SETTINGS_TABS = [
   ["import", "Import"],
   ["business", "Business"],
   ["backup", "Backup"],
+  ["updates", "Updates"],
 ];
 
 const state = {
@@ -116,6 +119,8 @@ async function load() {
   const response = await fetch("/api/data");
   const body = await response.json();
   if (body.error) throw new Error(body.error);
+  const problem = unreadable(body.data);
+  if (problem) throw new Error(problem);
   state.revision = body.revision;
   state.paths = { file: body.file, backups: body.backups, receipts: body.receipts };
   state.data = upgradeData(body.data ?? emptyData());
@@ -135,12 +140,20 @@ async function loadBackup() {
   }
 }
 
+// Saves and receipt uploads on their way to the server: an update's restart
+// waits for them (saving in update.mjs).
+let sending = 0;
+function sent(promise) {
+  sending++;
+  return promise.finally(() => sending--);
+}
+
 /** Applies a change to the data, draws it and saves the file. */
 function change(update) {
   const draft = structuredClone(state.data);
   state.data = update(draft) ?? draft;
   render();
-  state.saving = state.saving.then(save);
+  state.saving = sent(state.saving.then(save));
   return state.saving;
 }
 
@@ -171,7 +184,7 @@ async function save() {
 async function uploadAndRead(file) {
   const types = { "text/xml": "application/xml", "": guessType(file.name) };
   const type = types[file.type] ?? file.type;
-  const response = await fetch("/api/receipts", { method: "POST", headers: { "Content-Type": type }, body: file });
+  const response = await sent(fetch("/api/receipts", { method: "POST", headers: { "Content-Type": type }, body: file }));
   const body = await response.json();
   if (!response.ok) throw new Error(body.error || response.statusText);
   const reading = body.einvoice ?? { status: "plain" };
@@ -1119,7 +1132,7 @@ function drawSettings(tab) {
     { class: "tabs" },
     SETTINGS_TABS.map(([id, label]) => h("a", { href: `#settings/${id}`, class: id === tab ? "active" : null, text: label })),
   );
-  const draw = { categories: drawCategories, import: drawImport, business: drawBusiness, backup: drawBackup }[tab] ?? drawCategories;
+  const draw = { categories: drawCategories, import: drawImport, business: drawBusiness, backup: drawBackup, updates: drawUpdates }[tab] ?? drawCategories;
   return [tabs, draw()];
 }
 
@@ -1416,9 +1429,22 @@ function drawBackup() {
   ];
 }
 
+// The channel of the update button (update.mjs): which updates it offers.
+function drawUpdates() {
+  return [
+    card(
+      "Updates",
+      h("p", { class: "muted small", text: "Stable offers releases, with release notes on GitHub. Preview offers every change as soon as its tests pass, before it is released: new features first, and now and then a new bug. Back on Stable, Bookkeeping keeps its version until a release is newer: it never goes back to an older one. Updates never touch the data or the receipts." }),
+      updates.channelSettings(),
+    ),
+  ];
+}
+
 // ---- start
 
 setUpDrop();
+const updates = startUpdates(document.getElementById("update"), { saving: () => sending > 0 });
+
 Promise.all([load(), loadBackup()])
   .then(() => {
     const all = years(state.data);
