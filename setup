@@ -4,6 +4,10 @@
 # profile of its own. Running it again after a `git pull` restarts the
 # server with the new code.
 # `setup --remove` takes both out again; the data and receipts stay.
+#
+# `setup --backup [user@]host:path` copies the data and receipts to another
+# computer every night: a user timer runs the `backup` script (see there).
+# `setup --no-backup` stops that; the copies there stay.
 set -euo pipefail
 
 NAME=Bookkeeping
@@ -11,9 +15,16 @@ UNIT=omarchy-bookkeeping.service
 PORT=47221
 URL="http://127.0.0.1:$PORT/"
 DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-UNIT_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/$UNIT"
+UNIT_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
+UNIT_FILE="$UNIT_DIR/$UNIT"
 STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/omarchy-bookkeeping"
 DATA_FILE="$STATE_DIR/bookkeeping.json"
+# The nightly copy to another computer: where to (written by --backup, read
+# by the backup script), its result (written by the script, read by the app),
+# and the timer that runs it.
+BACKUP_CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy-bookkeeping/backup.conf"
+BACKUP_STATUS="$STATE_DIR/backup-status"
+BACKUP_UNIT=omarchy-bookkeeping-backup
 # The window's browser profile: no extensions, and nothing shared with
 # everyday browsing.
 PROFILE="$STATE_DIR/browser"
@@ -23,24 +34,136 @@ fail() {
   exit 1
 }
 
+usage() {
+  cat <<USAGE
+Usage: setup                               install, or update after git pull
+       setup --remove                      take the service and launcher entry out
+       setup --backup [user@]host:path     copy the data and receipts there every night
+       setup --no-backup                   stop the nightly copy
+USAGE
+}
+
+# The timer runs every hour, so a laptop that was offline tries again soon;
+# the script copies once a day. Persistent: an hour missed while asleep or
+# off runs at wake-up.
+install_backup_units() {
+  mkdir -p "$UNIT_DIR"
+  cat >"$UNIT_DIR/$BACKUP_UNIT.service" <<UNIT_EOF
+[Unit]
+Description=Bookkeeping: copy the data and receipts to another computer ($DIR)
+
+[Service]
+Type=oneshot
+ExecStart=$DIR/backup --daily
+Nice=10
+IOSchedulingClass=idle
+UNIT_EOF
+  cat >"$UNIT_DIR/$BACKUP_UNIT.timer" <<UNIT_EOF
+[Unit]
+Description=Bookkeeping: nightly copy of the data and receipts
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+UNIT_EOF
+  systemctl --user daemon-reload
+  systemctl --user enable --now "$BACKUP_UNIT.timer" >/dev/null
+}
+
+remove_backup() {
+  systemctl --user disable --now "$BACKUP_UNIT.timer" 2>/dev/null || true
+  rm -f "$UNIT_DIR/$BACKUP_UNIT.service" "$UNIT_DIR/$BACKUP_UNIT.timer" "$BACKUP_CONFIG" "$BACKUP_STATUS"
+  systemctl --user daemon-reload
+}
+
+# Sets where the nightly copy goes, installs the timer and makes the first
+# copy, as the timer would.
+set_backup() {
+  local dest=$1 old result message
+  # A folder of its own: not a home directory (host:, host:~) or /.
+  local on_host='^([^@:/[:space:]]+@)?[A-Za-z0-9._-]+:[^[:space:]]*[^[:space:]/.~]/?$'
+  local here='^/[^[:space:]]*[^[:space:]/]/?$'
+  [[ $dest =~ $on_host || $dest =~ $here ]] ||
+    fail "give the destination as [user@]host:path or /path, such as user@server:backups/omarchy-bookkeeping"
+  [[ $dest != *[\"\'\\%]* ]] || fail "the destination may not contain quotes, backslashes or %"
+  command -v rsync >/dev/null || fail "rsync is missing. Install it once: sudo pacman -S rsync"
+
+  mkdir -p "$(dirname "$BACKUP_CONFIG")" "$STATE_DIR"
+  chmod 700 "$STATE_DIR"
+  {
+    echo "# Where Bookkeeping's nightly copy goes (setup --backup)."
+    echo "destination=$dest"
+    # The timer runs outside the login session: it gets this session's SSH
+    # agent, which holds the key (such as ssh-tpm-agent's).
+    if [[ -n ${SSH_AUTH_SOCK:-} ]]; then
+      echo "ssh_auth_sock=$SSH_AUTH_SOCK"
+    fi
+  } >"$BACKUP_CONFIG"
+  case ${SSH_AUTH_SOCK:-} in
+    "" | "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/*) ;;
+    *) echo "Note: the SSH agent at $SSH_AUTH_SOCK may move after the next login; then run setup --backup again." ;;
+  esac
+
+  # A new destination starts without a copy.
+  old=$(sed -n 's/^destination=//p' "$BACKUP_STATUS" 2>/dev/null || true)
+  if [[ $old != "$dest" ]]; then
+    echo "destination=$dest" >"$BACKUP_STATUS"
+  fi
+
+  install_backup_units
+  echo "Copying to $dest (the first time takes a while)..."
+  systemctl --user start "$BACKUP_UNIT.service" || true
+  result=$(sed -n 's/^result=//p' "$BACKUP_STATUS")
+  message=$(sed -n 's/^message=//p' "$BACKUP_STATUS")
+  case $result in
+    ok)
+      echo "Done: $message. From now on it copies once a day; Settings › Backup shows the last copy."
+      ;;
+    unreachable)
+      echo "$message right now. The timer tries every hour; Settings › Backup shows when it worked."
+      ;;
+    *)
+      journalctl --user -u "$BACKUP_UNIT.service" -n 5 --no-pager -o cat 2>/dev/null || true
+      fail "the first copy failed: ${message:-see journalctl --user -u $BACKUP_UNIT.service}"
+      ;;
+  esac
+}
+
 case ${1:-} in
   "") ;;
   --remove)
     systemctl --user disable --now "$UNIT" 2>/dev/null || true
     rm -f "$UNIT_FILE"
-    systemctl --user daemon-reload
+    remove_backup
     if command -v omarchy-webapp-remove >/dev/null; then
       OMARCHY_REMOVE_NOTIFY=false omarchy-webapp-remove "$NAME" || true
     fi
     rm -rf "$PROFILE"
-    echo "Removed Bookkeeping's service and launcher entry. The data and receipts stay in $STATE_DIR."
+    echo "Removed Bookkeeping's service, launcher entry and nightly copy. The data and receipts stay in $STATE_DIR."
+    exit 0
+    ;;
+  --backup)
+    [[ -n ${2:-} ]] || fail "say where to: setup --backup [user@]host:path"
+    [[ $DIR != *[[:space:]\"\\%]* ]] || fail "move the repository to a path without spaces, quotes, backslashes or %"
+    set_backup "$2"
+    exit 0
+    ;;
+  --no-backup)
+    remove_backup
+    echo "The nightly copy is off. The copies made so far stay where they are."
     exit 0
     ;;
   -h | --help)
-    echo "Usage: setup [--remove]"
+    usage
     exit 0
     ;;
-  *) fail "unknown option: $1" ;;
+  *)
+    usage >&2
+    fail "unknown option: $1"
+    ;;
 esac
 
 command -v omarchy-webapp-install >/dev/null || fail "omarchy-webapp-install not found; is this Omarchy?"
@@ -68,6 +191,11 @@ chmod 700 "$STATE_DIR"
 systemctl --user daemon-reload
 systemctl --user enable "$UNIT" >/dev/null
 systemctl --user restart "$UNIT"
+
+# After a git pull: the nightly copy's units with this checkout's paths.
+if [[ -f $BACKUP_CONFIG ]]; then
+  install_backup_units
+fi
 
 omarchy-webapp-install "$NAME" "$URL" "$DIR/icon.png" \
   "omarchy-launch-webapp $URL --user-data-dir=$PROFILE --no-first-run --no-default-browser-check"

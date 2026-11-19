@@ -29,6 +29,7 @@ import {
   years,
 } from "./books.mjs";
 import { applyImport, planImport, readTable } from "./import.mjs";
+import { backupState } from "./backup.mjs";
 
 const VIEWS = [
   ["overview", "Overview"],
@@ -40,6 +41,7 @@ const SETTINGS_TABS = [
   ["categories", "Categories"],
   ["import", "Import"],
   ["business", "Business"],
+  ["backup", "Backup"],
 ];
 
 const state = {
@@ -53,6 +55,7 @@ const state = {
   editorProblems: [],
   tables: [], // import: files read, before they are imported
   formYear: null, // Settings › Categories: the form whose line numbers are shown
+  backup: null, // GET /api/backup: the last copy to another computer
   saving: Promise.resolve(),
 };
 
@@ -114,6 +117,20 @@ async function load() {
   state.data = body.data ?? emptyData();
 }
 
+/** The backup's status. Drawn again only when it changed, such as after a
+ *  copy made while the window was open. */
+async function loadBackup() {
+  try {
+    const response = await fetch("/api/backup");
+    const body = await response.json();
+    if (JSON.stringify(body) === JSON.stringify(state.backup)) return false;
+    state.backup = body;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Applies a change to the data, draws it and saves the file. */
 function change(update) {
   const draft = structuredClone(state.data);
@@ -169,6 +186,7 @@ function route() {
 window.addEventListener("hashchange", () => {
   state.editing = null;
   render();
+  loadBackup().then((changed) => changed && render());
 });
 
 // ---- drawing
@@ -225,7 +243,9 @@ function drawOverview() {
     ),
   );
   const perYear = profitByYear(state.data);
+  const backup = backupState(state.backup?.status ?? null, state.revision);
   return [
+    backup.warning ? h("p", { class: "notice" }, `${backup.warning} `, h("a", { href: "#settings/backup", text: "Settings › Backup" })) : null,
     tiles,
     card("Profit per year", yearChart(perYear), h("p", { class: "muted small", text: "Click a year to see it." })),
     card(`${state.year} by month`, monthChart(t.months), t.homeOffice ? h("p", { class: "muted small", text: `Plus home office for the year: ${euro(t.homeOffice)}` }) : null),
@@ -809,7 +829,7 @@ function drawSettings(tab) {
     { class: "tabs" },
     SETTINGS_TABS.map(([id, label]) => h("a", { href: `#settings/${id}`, class: id === tab ? "active" : null, text: label })),
   );
-  const draw = { categories: drawCategories, import: drawImport, business: drawBusiness }[tab] ?? drawCategories;
+  const draw = { categories: drawCategories, import: drawImport, business: drawBusiness, backup: drawBackup }[tab] ?? drawCategories;
   return [tabs, draw()];
 }
 
@@ -1066,9 +1086,49 @@ function drawBusiness() {
   ];
 }
 
+function drawBackup() {
+  const info = state.backup ?? {};
+  const b = backupState(info.status ?? null, state.revision);
+  const setup = info.setup ?? "setup";
+  const command = (text) => h("code", { text });
+  const status = card(
+    "Backup",
+    h("p", { class: b.level === "warn" ? "risk-text" : b.level === "ok" ? null : "muted" }, h("strong", { text: b.title })),
+    h("p", { class: b.level === "warn" ? "risk-text" : "muted", text: b.detail }),
+    b.problem ? h("p", { class: "risk-text", text: b.problem }) : null,
+    b.note ? h("p", { class: "muted", text: b.note }) : null,
+    b.destination ? h("dl", { class: "paths" }, h("dt", { text: "Copies go to" }), h("dd", {}, command(b.destination))) : null,
+  );
+  if (b.level === "off") {
+    return [
+      status,
+      card(
+        "Set it up",
+        h("p", {}, "Once a day, a timer copies the data, its daily copies and the receipts to another computer over SSH, such as a home server. Run once in a terminal:"),
+        h("p", {}, command(`${setup} --backup user@host:path`)),
+        h("p", { class: "muted small", text: "The other computer needs rsync and this computer's SSH key; the first copy shows whether it works." }),
+      ),
+    ];
+  }
+  return [
+    status,
+    card(
+      "How it works",
+      h(
+        "ul",
+        {},
+        h("li", { text: "Once a day, the first time the other computer can be reached: a timer tries every hour, also after sleep. Offline, it waits quietly." }),
+        h("li", {}, "Nothing there is ever deleted. A file that changed here replaces its copy there, and the old copy moves to ", command("replaced/<date and time>/"), ". So every version of the data file stays, and every receipt."),
+        h("li", {}, "Copy now: ", command(info.backup ?? "backup"), ". Stop: ", command(`${setup} --no-backup`), "."),
+        h("li", { text: "To go back to an earlier version: copy it from there over the data file here (Settings › Business › Files) and reload this window." }),
+      ),
+    ),
+  ];
+}
+
 // ---- start
 
-load()
+Promise.all([load(), loadBackup()])
   .then(() => {
     const all = years(state.data);
     if (!all.includes(state.year)) state.year = all[0];

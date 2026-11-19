@@ -6,7 +6,8 @@ exemption (Kleinunternehmer, § 19 UStG), as an app for
 categories linked to the lines of the official EÜR form, analytics across
 all years, and each year's Einnahmenüberschussrechnung ready to type into
 ELSTER. Years of old spreadsheets come in through a CSV import. No account
-and no sync: everything stays on this computer.
+and no sync: everything stays on this computer, plus, if set up, a nightly
+copy on another computer of your own.
 
 It runs as an Omarchy web app: a small local server and a "Bookkeeping"
 window in the app launcher. Colors follow the current Omarchy theme.
@@ -28,7 +29,8 @@ server at login on `http://127.0.0.1:47221/`, and a "Bookkeeping" entry in
 the app launcher (`Super+Space`). The server reads the code from the cloned
 directory, so keep it where it is. To update: `git pull`, then `setup`
 again. `setup --remove` takes the service and the launcher entry out; the
-data stays.
+data stays. `setup --backup` sets up the nightly copy to another computer
+(see [Backup](#backup)).
 
 ## Views
 
@@ -46,7 +48,8 @@ data stays.
   home-office days by activity, and the profit filed with the tax office, to
   check the entries against it.
 - **Settings**: categories and their EÜR lines, the line numbers of each
-  year's form, the import, and the business details.
+  year's form, the import, the business details, and the backup: when the
+  last copy to another computer was made.
 
 ![EÜR](docs/euer.png)
 
@@ -92,6 +95,52 @@ years go in by hand on the EÜR page.
 - `…/backups/`: a copy of that file from before the first change of each
   day, the last 60 days
 - `…/receipts/`: receipt files, named by their content
+- `…/backup-status`: the result of the last backup;
+  `~/.config/omarchy-bookkeeping/backup.conf`: where it goes
+
+## Backup
+
+Once a day, Bookkeeping can copy the data, its daily copies and the receipts
+to another computer over SSH, such as a home server. Run once, with the
+server's user and name, and a folder there of its own:
+
+```bash
+~/.local/share/omarchy-bookkeeping/setup --backup user@server:backups/omarchy-bookkeeping
+```
+
+Both computers need rsync (on Omarchy: `sudo pacman -S rsync`), and the
+server needs this computer's SSH key in `~/.ssh/authorized_keys`. Connect
+once by hand before (`ssh user@server true`), to confirm the server's host
+key. Run setup in a terminal where that `ssh` works: if the key is in an SSH
+agent (such as `ssh-tpm-agent`), setup saves where the agent is, for the
+timer. It then makes the first copy and says whether it worked.
+
+- **What**: everything in `~/.local/state/omarchy-bookkeeping` but the
+  window's browser profile.
+- **When**: a user timer (`omarchy-bookkeeping-backup.timer`) runs every
+  hour, also right after a wake-up or start, and copies once a day. When the
+  server can't be reached, it says so in one line of the journal and tries
+  again an hour later.
+- **Kept**: everything, for good. Nothing on the server is ever deleted. A
+  file that changed here replaces its copy there, and the old copy moves to
+  `replaced/<date and time>/`; receipts never change, so each stays as it
+  was copied. The books must be kept for ten years and receipts for eight,
+  counted from the end of the year (§ 147 AO). A mistake that got copied may
+  be found only years later, at the next EÜR or in a tax audit; with every
+  version kept, it can still be traced and undone. And it is small: ten
+  years of 200 entries make a data file of about 800 KB; with changes on 100
+  days a year, all copies of ten years stay under 1 GB.
+- **Status**: Settings › Backup shows the last copy and why a try failed;
+  the Overview warns when changes have waited more than three days.
+- **Copy now**: `~/.local/share/omarchy-bookkeeping/backup`. **Stop**:
+  `setup --no-backup`; the copies stay.
+- **Check the timer**: `systemctl --user list-timers omarchy-bookkeeping-backup.timer`
+  and `journalctl --user -u omarchy-bookkeeping-backup`.
+
+To go back to an earlier version, copy it from the server over
+`bookkeeping.json` here and reload the window.
+
+![Settings › Backup](docs/backup.png)
 
 ## Not built yet
 
@@ -99,14 +148,13 @@ years go in by hand on the EÜR page.
   marked paid to become income
 - Reading received e-invoices (ZUGFeRD, XRechnung) into expenses
 - Assets and their depreciation (AfA)
-- A nightly copy of the data and receipts to another computer
 - An update button, as in Finance
 
 ## Development
 
 ```bash
 node --test                               # app logic and import
-python3 -m unittest discover -s test -v   # server
+python3 -m unittest discover -s test -v   # server, backup script, setup --backup
 python3 server.py --port 47321 --data /tmp/books.json   # try it
 ```
 

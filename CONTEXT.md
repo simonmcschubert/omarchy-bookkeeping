@@ -38,6 +38,17 @@ a year, to check the entries against.
 **Closed year** (`closed`): a filed year whose entries can't change until it
 is reopened. Imports leave closed years out.
 
+**Daily copy** (`backups/`): the data file as it was before the first change
+of a day, kept next to it for 60 days (`back_up`). _Avoid_: backup, for this.
+
+**Backup** (`backup`, Settings › Backup): the copy of the data, its daily
+copies and the receipts on another computer, made once a day by the `backup`
+script. Its **destination** (`[user@]host:path`) is set by `setup --backup`;
+its result is in `backup-status`. Nothing at the destination is deleted.
+
+**Replaced copy** (`replaced/<date and time>/`): a file a backup replaced at
+the destination, kept there, so every version stays.
+
 **Receipt**: the file behind an entry: a PDF, photo or e-invoice XML, kept
 in `receipts/` under the SHA-256 of its content.
 
