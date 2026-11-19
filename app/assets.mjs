@@ -97,7 +97,13 @@ export const LIVES = [
 /** VAT rates an invoice can show: 16 % and 5 % from July to December 2020. */
 export const VAT_RATES = [19, 7, 16, 5, 0];
 
-const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+/** A real day as an ISO date: 2025-01-15, not 2025-13-01. */
+export function isDate(iso) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso ?? "");
+  if (!match) return false;
+  const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+  return date.toISOString().slice(0, 10) === iso;
+}
 const yearOfDate = (iso) => Number(iso.slice(0, 4));
 /** A month as one number: year × 12 + month − 1. */
 const monthOf = (iso) => yearOfDate(iso) * 12 + Number(iso.slice(5, 7)) - 1;
@@ -274,18 +280,27 @@ export function aveur(data, year) {
 
 // ---- changes
 
-/** The years in which two versions of an asset (null: none) differ. */
-export function changedYears(before, after) {
-  const years = new Set([...(before ? assetYears(before) : []), ...(after ? assetYears(after) : [])]);
+/**
+ * The years in which two versions of an asset (null: none) differ: in the
+ * EÜR or in Anlage AVEÜR, which lists an asset (but a GWG) every year it is
+ * held, with its cost, even when it is written off. `years` are the ones to look at:
+ * by default those either version adds an amount to.
+ */
+export function changedYears(before, after, years = null) {
+  const candidates = years ?? new Set([...(before ? assetYears(before) : []), ...(after ? assetYears(after) : [])]);
   const key = (asset, year) => {
     const row = asset && assetInYear(asset, year);
-    return row ? JSON.stringify([row.how.line, assetType(asset).group, row.start, row.added, row.afa, row.gwg, row.remaining, row.sale, row.end]) : "";
+    if (!row) return "";
+    // AVEÜR lists the cost of what was there at the start; GWG not at all.
+    const cost = row.added || row.how.method === "gwg" ? 0 : asset.cost;
+    return JSON.stringify([row.how.method, row.how.line, assetType(asset).group, cost, row.start, row.added, row.afa, row.gwg, row.remaining, row.sale, row.end]);
   };
-  return [...years].filter((year) => key(before, year) !== key(after, year)).sort((a, b) => a - b);
+  return [...candidates].filter((year) => key(before, year) !== key(after, year)).sort((a, b) => a - b);
 }
 
-function closedOf(data, years) {
-  return years.filter((y) => (data.closed ?? []).includes(y));
+/** The closed years a change of an asset would alter. */
+function closedOf(data, before, after) {
+  return changedYears(before, after, data.closed ?? []);
 }
 
 const closedText = (years) => `${years.join(", ")}, which ${years.length > 1 ? "are" : "is"} closed`;
@@ -296,12 +311,12 @@ export function assetProblems(data, asset, original = null) {
   const problems = [];
   if (!String(asset.name ?? "").trim()) problems.push("Say what it is.");
   if (!ASSET_TYPES.some((t) => t.id === asset.type)) problems.push("Choose a kind.");
-  const dateOk = ISO_DATE.test(asset.date ?? "");
+  const dateOk = isDate(asset.date);
   if (!dateOk) problems.push("Enter the day it came, such as 15.01.2025.");
   if (!Number.isInteger(asset.cost) || asset.cost <= 0) problems.push("Enter what it cost, such as 1299,00.");
   if (!VAT_RATES.includes(asset.vatRate)) problems.push("Choose the VAT rate on the invoice.");
   if (asset.disposal) {
-    if (!ISO_DATE.test(asset.disposal.date ?? "")) problems.push("Enter the day it went, such as 15.01.2025.");
+    if (!isDate(asset.disposal.date)) problems.push("Enter the day it went, such as 15.01.2025.");
     else if (dateOk && asset.disposal.date < asset.date) problems.push("It can't go before it came.");
     if (!Number.isInteger(asset.disposal.price) || asset.disposal.price < 0) problems.push("Enter the price it went for: 0 if thrown away.");
   }
@@ -310,13 +325,13 @@ export function assetProblems(data, asset, original = null) {
   if (how.method === "linear" && !(Number.isInteger(how.life) && how.life >= 1 && how.life <= 50)) {
     return ["Enter its useful life in whole years, from the AfA table."];
   }
-  const closed = closedOf(data, changedYears(original, asset));
+  const closed = closedOf(data, original, asset);
   if (closed.length) problems.push(`This changes ${closedText(closed)}. Reopen it on the EÜR page first.`);
   return problems;
 }
 
 /** Problems with deleting an asset; empty when fine. */
 export function deleteProblems(data, asset) {
-  const closed = closedOf(data, changedYears(asset, null));
+  const closed = closedOf(data, asset, null);
   return closed.length ? [`It counts in ${closedText(closed)}.`] : [];
 }

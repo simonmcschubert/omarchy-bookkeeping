@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { assetInYear, assetProblems, assetsInYear, aveur, changedYears, deleteProblems, gwgLimit, netCost, treatment } from "../app/assets.mjs";
+import { assetInYear, assetProblems, assetsInYear, aveur, changedYears, deleteProblems, gwgLimit, isDate, netCost, treatment } from "../app/assets.mjs";
 import { categoryTotals, emptyData, euer, profitByYear, upgradeData, yearTotals, years } from "../app/books.mjs";
 import { planImport } from "../app/import.mjs";
 
@@ -172,6 +172,12 @@ test("checks before saving, and closed years", () => {
   assert.match(assetProblems(data, { ...desk, vatRate: 12 })[0], /VAT/);
   assert.match(assetProblems(data, { ...desk, disposal: { date: "2024-01-01", price: 0 } })[0], /before/);
   assert.match(assetProblems(data, { ...desk, cost: 0 })[0], /cost/);
+  // Days that don't exist, though shaped like dates.
+  assert.equal(isDate("2025-13-01"), false);
+  assert.equal(isDate("2025-02-29"), false);
+  assert.equal(isDate("2024-02-29"), true);
+  assert.match(assetProblems(data, { ...laptop, date: "2025-13-01" })[0], /day it came/);
+  assert.match(assetProblems(data, { ...desk, disposal: { date: "2026-02-30", price: 0 } })[0], /day it went/);
 
   data.closed = [2025];
   // A new asset bought in a closed year, or a change to its numbers there: no.
@@ -183,6 +189,19 @@ test("checks before saving, and closed years", () => {
   assert.deepEqual(changedYears(desk, { ...desk, disposal: { date: "2027-06-10", price: 30000 } }), [2027, 2028, 2029, 2030]);
   assert.match(deleteProblems(data, desk)[0], /2025/);
   assert.deepEqual(deleteProblems(data, asset({ name: "Later", date: "2026-01-01", cost: 10000 })), []);
+});
+
+test("a closed later year still lists a written-off asset in Anlage AVEÜR", () => {
+  const data = books();
+  data.closed = [2026];
+  // The laptop is written off in 2025, but 2026's AVEÜR lists its cost.
+  assert.match(assetProblems(data, { ...laptop, cost: 199900 }, laptop)[0], /2026, which is closed/);
+  assert.match(assetProblems(data, { ...laptop, type: "other", life: 3 }, laptop)[0], /2026/);
+  assert.match(assetProblems(data, { ...laptop, disposal: { date: "2025-12-01", price: 0 } }, laptop)[0], /2026/);
+  assert.match(deleteProblems(data, laptop)[0], /2026/);
+  // Going in 2027 leaves 2026 as it was; so does a GWG, which AVEÜR leaves out.
+  assert.deepEqual(assetProblems(data, { ...laptop, disposal: { date: "2027-03-01", price: 20000 } }, laptop), []);
+  assert.deepEqual(assetProblems(data, { ...chair, cost: 59000 }, chair), []);
 });
 
 test("Anlage AVEÜR: AfA assets by block, GWG left out", () => {

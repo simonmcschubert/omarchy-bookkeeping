@@ -16,6 +16,7 @@ import {
   aveur,
   deleteProblems,
   gwgLimit,
+  isDate,
   netCost,
   treatment,
 } from "./assets.mjs";
@@ -167,7 +168,7 @@ function lineText(data, id, year) {
 /** What the form's asset adds to the EÜR, year by year, in words. */
 function preview(data, d) {
   const asset = fromDraft(d);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(asset.date) || !Number.isInteger(asset.cost) || asset.cost <= 0) {
+  if (!isDate(asset.date) || !Number.isInteger(asset.cost) || asset.cost <= 0) {
     return "Enter the date and the cost to see how it is written off.";
   }
   const how = treatment(asset);
@@ -191,7 +192,7 @@ function preview(data, d) {
     const shown = parts.length > 6 ? [...parts.slice(0, 3), "…", ...parts.slice(-2)] : parts;
     lines.push(`AfA over ${how.life} years, Anlage EÜR ${lineText(data, how.line, year)}: ${shown.join(" · ")}.`);
   }
-  if (asset.disposal && /^\d{4}-\d{2}-\d{2}$/.test(asset.disposal.date) && Number.isInteger(asset.disposal.price) && asset.disposal.date >= asset.date) {
+  if (asset.disposal && isDate(asset.disposal.date) && Number.isInteger(asset.disposal.price) && asset.disposal.date >= asset.date) {
     const goneYear = Number(asset.disposal.date.slice(0, 4));
     const row = assetInYear(asset, goneYear);
     lines.push(
