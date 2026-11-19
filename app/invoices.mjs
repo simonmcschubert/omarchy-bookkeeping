@@ -282,10 +282,18 @@ export function numberProblems(data, entry) {
   return [`No. ${entry.number} is the number of invoice ${entry.number}${open}. The next free number is ${nextNumber(data)}.`];
 }
 
+/** Why a draft in the form can't be saved or issued: another window
+ *  issued it meanwhile, so the form is out of date and would replace it. */
+export function draftProblems(data, id) {
+  const record = (data.invoices ?? []).find((i) => i.id === id);
+  return record && record.status !== "draft" ? [`It was issued meanwhile, as No. ${record.number} (another window?): this form is out of date.`] : [];
+}
+
 /** Why an invoice whose PDF was just made can't be kept after all, as the
  *  data may change while the PDF is made: its number was taken, or the
  *  invoice a cancellation cancels was paid or cancelled meanwhile. */
 export function keepProblems(data, issued) {
+  if (issued.kind === "invoice" && draftProblems(data, issued.id).length) return draftProblems(data, issued.id);
   if (nextNumber(data) !== issued.number) return [`Number ${issued.number} was taken meanwhile (another window?). Issue it again.`];
   if (issued.kind !== "cancellation") return [];
   const original = (data.invoices ?? []).find((i) => i.id === issued.cancels);

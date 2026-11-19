@@ -13,6 +13,7 @@ import {
   customerInUse,
   customerProblems,
   deleteDraft,
+  draftProblems,
   dueDate,
   incomeByCustomer,
   invoiceFileName,
@@ -251,6 +252,7 @@ function editor(ui) {
     "form",
     {
       class: "editor",
+      inert: s.busy, // its PDF is being made and saved: typing would be lost
       onsubmit: (event) => {
         event.preventDefault();
         issue(ui);
@@ -339,8 +341,8 @@ function cancelEdit(ui) {
 function saveDraft(ui) {
   const s = local(ui);
   const draft = { ...readDraft(s.editing), status: "draft" };
-  if (!parseDate(draft.date)) {
-    s.problems = ["Enter the invoice date, such as 15.01.2025."];
+  s.problems = parseDate(draft.date) ? draftProblems(ui.state.data, draft.id) : ["Enter the invoice date, such as 15.01.2025."];
+  if (s.problems.length) {
     ui.render();
     return;
   }

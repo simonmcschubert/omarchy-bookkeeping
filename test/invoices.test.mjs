@@ -7,6 +7,7 @@ import {
   cancelProblems,
   cancellationOf,
   customerProblems,
+  draftProblems,
   dueDate,
   forgetPayment,
   incomeByCustomer,
@@ -216,6 +217,17 @@ test("an issued invoice owns its number: no other income takes it", () => {
   // Its own payment keeps the number, also when edited later.
   markPaid(data, invoice.id, "20.11.2026");
   assert.deepEqual(numberProblems(data, data.entries.at(-1)), []);
+});
+
+test("a draft issued in another window meanwhile is neither saved nor issued again", () => {
+  const data = sampleData();
+  data.invoices = [{ ...sampleDraft(data), status: "draft" }];
+  const stale = structuredClone(data.invoices[0]); // the form of the other window
+  assert.deepEqual(draftProblems(data, stale.id), []);
+  issue(data, data.invoices[0]);
+  assert.match(draftProblems(data, stale.id)[0], /issued meanwhile, as No. 42/);
+  const again = issuing(data, stale, nextNumber(data));
+  assert.match(keepProblems(data, again)[0], /issued meanwhile, as No. 42/);
 });
 
 test("a paid invoice is not cancelled here", () => {
