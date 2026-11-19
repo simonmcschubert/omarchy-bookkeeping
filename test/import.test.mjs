@@ -77,6 +77,17 @@ test("an import plan: per year, new accounts, copies left out", () => {
   assert.equal(again.duplicates.length, 8);
 });
 
+test("the same file picked twice is imported once; repeated rows in one file stay", () => {
+  const data = emptyData();
+  const table = readTable(fixture("2024-ausgaben.csv"));
+  const plan = planImport(data, [table, readTable(fixture("2024-ausgaben.csv"))]);
+  assert.equal(plan.entries.length, 4);
+  assert.equal(plan.duplicates.length, 4);
+
+  const twice = readTable("Datum;Betrag;Text;Konto\n01.02.2024;3,72;Payout;1\n01.02.2024;3,72;Payout;1\n", { kind: "income" });
+  assert.equal(planImport(data, [twice]).entries.length, 2);
+});
+
 test("closed years are left out", () => {
   const data = { ...emptyData(), closed: [2024] };
   const plan = planImport(data, [readTable(fixture("2024-ausgaben.csv"))]);

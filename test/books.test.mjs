@@ -144,6 +144,13 @@ test("category totals include the home office", () => {
   );
 });
 
+test("entries without a category count for their own kind", () => {
+  const data = emptyData();
+  data.entries = [entry("income", "2025-03-01", 10000, null), entry("expense", "2025-03-02", 2000, null)];
+  assert.deepEqual(categoryTotals(data, 2025, "income").map((r) => [r.name, r.amount]), [["No category", 10000]]);
+  assert.deepEqual(categoryTotals(data, 2025, "expense").map((r) => [r.name, r.amount]), [["No category", 2000]]);
+});
+
 test("next income number and entry checks", () => {
   const data = year2025();
   assert.equal(nextNumber(data), 84);

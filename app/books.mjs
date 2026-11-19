@@ -247,7 +247,8 @@ export function yearTotals(data, year) {
       expenses += entry.amount;
       months[month].expenses += entry.amount;
     }
-    const key = entry.category ?? "";
+    // By kind too: entries without a category are income or expenses.
+    const key = `${entry.kind}|${entry.category ?? ""}`;
     byCategory.set(key, (byCategory.get(key) ?? 0) + entry.amount);
     if (!entry.receipt) missingReceipts += 1;
     if (!categoryById(data, entry.category)?.group) uncategorized += 1;
@@ -285,9 +286,10 @@ export function profitByYear(data, now = new Date()) {
 export function categoryTotals(data, year, kind) {
   const totals = yearTotals(data, year).byCategory;
   const rows = [];
-  for (const [id, amount] of totals) {
+  for (const [key, amount] of totals) {
+    const [entryKind, id] = key.split("|");
+    if (entryKind !== kind) continue;
     const category = categoryById(data, id);
-    if ((category?.kind ?? kindOfUnknown(data, id, year)) !== kind) continue;
     rows.push({ id, name: category ? category.name : "No category", amount });
   }
   if (kind === "expense") {
@@ -295,11 +297,6 @@ export function categoryTotals(data, year, kind) {
     if (homeOffice) rows.push({ id: HOME_OFFICE, name: "Home office (Tagespauschale)", amount: homeOffice });
   }
   return rows.sort((a, b) => b.amount - a.amount);
-}
-
-function kindOfUnknown(data, id, year) {
-  const entry = data.entries.find((e) => (e.category ?? "") === id && yearOf(e) === year);
-  return entry?.kind;
 }
 
 // ---- the EÜR

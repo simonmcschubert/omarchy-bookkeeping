@@ -156,14 +156,17 @@ export function readTable(text, { kind, fileName = "" } = {}) {
 
 /**
  * What an import of these tables would add, checked against the data:
- * entries, possible copies of ones already there, and accounts that are no
- * category yet. Nothing changes until applyImport.
+ * entries, possible copies of ones already there or in an earlier table of
+ * the same import (the same file picked twice, overlapping exports), and
+ * accounts that are no category yet. Identical rows within one table are
+ * kept: the spreadsheet lists them twice. Nothing changes until applyImport.
  */
 export function planImport(data, tables) {
   const existing = new Set(data.entries.map(duplicateKey));
   const plan = { entries: [], duplicates: [], newAccounts: [], closedYears: [], byYear: new Map() };
   const accounts = new Map();
   for (const table of tables) {
+    const accepted = [];
     for (const row of table.rows) {
       const id = row.account === null ? null : categoryId(row.kind, row.account);
       const entry = {
@@ -197,7 +200,9 @@ export function planImport(data, tables) {
       totals.count += 1;
       plan.byYear.set(year, totals);
       plan.entries.push(entry);
+      accepted.push(duplicateKey(entry));
     }
+    for (const key of accepted) existing.add(key);
   }
   plan.newAccounts = [...accounts.values()];
   plan.byYear = new Map([...plan.byYear].sort((a, b) => a[0] - b[0]));
