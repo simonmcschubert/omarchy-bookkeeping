@@ -299,12 +299,18 @@ export function startUpdates(root, { saving, editing = () => false }) {
     if (reloading) return;
     reloading = restarting = true;
     server = json;
-    while (saving() || editing()) {
-      if (!asked.reload && editing()) {
-        asked.reload = true;
-        render();
+    for (;;) {
+      while (saving() || editing()) {
+        if (!asked.reload && editing()) {
+          asked.reload = true;
+          render();
+        }
+        await sleep(100);
       }
-      await sleep(100);
+      // A field that saves on change (Settings) saves when it loses focus;
+      // saving() then waits for it.
+      document.activeElement?.blur();
+      if (!saving()) break;
     }
     location.reload();
   }
