@@ -1,0 +1,787 @@
+/* Colors come from /theme.css (the current Omarchy theme). These defaults
+   are Tokyo Night, used until that loads. The look follows Finance. */
+:root {
+  --bg: #1a1b26;
+  --surface: #24283b;
+  --sunken: #13141c;
+  --fg: #a9b1d6;
+  --fg-strong: #c0caf5;
+  --fg-muted: #565f89;
+  --border: #414868;
+  --selection: #292e42;
+  --accent: #7aa2f7;
+  --red: #f7768e;
+  --green: #9ece6a;
+  --yellow: #e0af68;
+  color-scheme: dark;
+  /* Charts keep colors of their own, so income and expenses stay apart in
+     every theme, grey ones too. Same values as Finance. */
+  --series-1: light-dark(#4e739c, #6b8cb3);
+  --series-2: light-dark(#a56c4a, #b48164);
+  --good: light-dark(#4f8a59, #60a06a);
+  --bad: light-dark(#a54b4b, #b86161);
+  --risk: light-dark(#a3843f, #ba9b5e);
+  --bad-text: light-dark(#8f3636, #d59090);
+  --good-text: light-dark(#3d7046, #81bb8b);
+  --risk-text: light-dark(#7d6328, #c9ad72);
+  --font: "JetBrainsMono Nerd Font", "JetBrains Mono", ui-monospace, "Cascadia Mono", monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--bg);
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 14px/1.5 var(--font);
+  font-variant-numeric: tabular-nums;
+}
+
+a {
+  color: var(--accent);
+}
+
+h1,
+h2,
+h3 {
+  color: var(--fg-strong);
+  font-weight: 600;
+  margin: 0;
+}
+
+h1 {
+  font-size: 16px;
+}
+
+h2 {
+  font-size: 15px;
+}
+
+h3 {
+  font-size: 14px;
+}
+
+p {
+  margin: 8px 0;
+}
+
+code {
+  background: var(--sunken);
+  border-radius: 4px;
+  padding: 1px 5px;
+  overflow-wrap: anywhere;
+}
+
+.muted {
+  color: var(--fg-muted);
+}
+
+.small {
+  font-size: 12px;
+}
+
+.num {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.nowrap {
+  white-space: nowrap;
+}
+
+.good-text {
+  color: var(--good-text);
+}
+
+.bad-text {
+  color: var(--bad-text);
+}
+
+.risk-text {
+  color: var(--risk-text);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ---- top bar */
+
+.top {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  flex-wrap: wrap;
+  padding: 12px 24px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+}
+
+nav {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+nav a {
+  color: var(--fg);
+  text-decoration: none;
+  padding: 4px 10px;
+  border-radius: 6px;
+}
+
+nav a:hover {
+  background: var(--selection);
+}
+
+nav a.active {
+  background: var(--selection);
+  color: var(--fg-strong);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+nav.tabs {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 6px;
+}
+
+.year {
+  margin-left: auto;
+}
+
+/* ---- layout */
+
+main {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 20px 24px 48px;
+}
+
+main > div {
+  display: grid;
+  gap: 16px;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  min-width: 0;
+}
+
+.card > h2 {
+  margin-bottom: 8px;
+}
+
+.card-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.card-head h2 {
+  margin-right: auto;
+}
+
+.columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 16px;
+}
+
+.notice {
+  margin: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--risk);
+  border-radius: 6px;
+  color: var(--risk-text);
+}
+
+/* ---- tiles */
+
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+}
+
+.tile {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tile-label {
+  color: var(--fg-muted);
+}
+
+.tile-value {
+  color: var(--fg-strong);
+  font-size: 26px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.tile-value.bad-text {
+  color: var(--bad-text);
+}
+
+.tile-detail {
+  color: var(--fg-muted);
+  font-size: 12px;
+}
+
+.meter {
+  height: 6px;
+  background: var(--sunken);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.meter i {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  border-radius: 3px;
+}
+
+.meter.risk i {
+  background: var(--risk);
+}
+
+.meter.bad i {
+  background: var(--bad);
+}
+
+/* ---- category bars */
+
+.bars {
+  display: grid;
+  gap: 10px;
+}
+
+.bar-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 12px;
+}
+
+.bar-row .meter {
+  grid-column: 1 / -1;
+}
+
+/* ---- charts */
+
+.chart {
+  display: block;
+  width: 100%;
+  height: auto;
+  font-family: var(--font);
+}
+
+.chart .grid {
+  stroke: var(--border);
+  stroke-dasharray: 2 4;
+}
+
+.chart .axis {
+  stroke: var(--border);
+}
+
+.chart .tick {
+  fill: var(--fg-muted);
+  font-size: 12px;
+}
+
+.chart .tick.strong {
+  fill: var(--fg-strong);
+  font-weight: 600;
+}
+
+.chart .bar {
+  fill: var(--series-1);
+}
+
+.chart .bar.negative {
+  fill: var(--bad);
+}
+
+.chart .bar.expense {
+  fill: var(--series-2);
+}
+
+.chart .bar.current {
+  stroke: var(--fg-strong);
+  stroke-width: 2;
+}
+
+.chart .hit {
+  fill: transparent;
+}
+
+.chart .year-bar {
+  cursor: pointer;
+  outline: none;
+}
+
+.chart .year-bar:hover .bar,
+.chart .year-bar:focus-visible .bar {
+  filter: brightness(1.2);
+}
+
+.legend {
+  display: flex;
+  gap: 16px;
+  color: var(--fg-muted);
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+
+.legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  background: var(--series-1);
+}
+
+.swatch.expense {
+  background: var(--series-2);
+}
+
+/* ---- forms */
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: var(--fg-strong);
+}
+
+button {
+  background: var(--selection);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  border-color: var(--fg-muted);
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--bg);
+  font-weight: 600;
+}
+
+button.danger {
+  color: var(--red);
+}
+
+button.link {
+  background: none;
+  border: none;
+  padding: 2px 4px;
+  color: var(--accent);
+}
+
+button.link.danger {
+  color: var(--red);
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+input,
+select,
+textarea {
+  background: var(--sunken);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  min-width: 0;
+}
+
+select {
+  height: calc(1.5em + 14px);
+}
+
+input[type="file"] {
+  padding: 4px;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--fg-muted);
+  opacity: 1;
+}
+
+textarea {
+  width: 100%;
+  resize: vertical;
+}
+
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--fg-muted);
+}
+
+label.inline {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+.segmented {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.segmented button {
+  border: none;
+  border-radius: 0;
+  background: none;
+  color: var(--fg);
+}
+
+.segmented button + button {
+  border-left: 1px solid var(--border);
+}
+
+.segmented button.on {
+  background: var(--selection);
+  color: var(--fg-strong);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.toolbar .spacer {
+  flex: 1;
+}
+
+.editor {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  margin-bottom: 12px;
+  background: var(--bg);
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+}
+
+tr.editing .editor {
+  margin: 4px 0;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.form-grid .wide {
+  grid-column: span 2;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.actions .push {
+  margin-left: auto;
+}
+
+.problems {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--bad-text);
+}
+
+.receipt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: calc(1.5em + 14px);
+}
+
+.inline-form {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+input.days {
+  width: 90px;
+}
+
+/* ---- tables */
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th,
+td {
+  padding: 6px 10px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+thead th {
+  color: var(--fg-muted);
+  font-weight: normal;
+}
+
+thead th.num {
+  text-align: right;
+}
+
+tfoot td {
+  border-bottom: none;
+}
+
+table.compact td,
+table.compact th {
+  padding: 4px 8px;
+  vertical-align: middle;
+}
+
+table.compact input:not(.days),
+table.compact select {
+  width: 100%;
+}
+
+.sub {
+  display: block;
+  color: var(--fg-muted);
+  font-size: 12px;
+}
+
+tr.clickable {
+  cursor: pointer;
+}
+
+tr.clickable:hover > td {
+  background: var(--selection);
+}
+
+tr.editing > td {
+  background: var(--selection);
+  padding: 4px;
+}
+
+/* ---- EÜR */
+
+table.euer td.line,
+table.euer th.line {
+  width: 56px;
+  text-align: right;
+  color: var(--fg-muted);
+}
+
+table.euer tr.section th {
+  padding-top: 16px;
+  color: var(--fg-strong);
+  font-weight: 600;
+}
+
+table.euer tr.group td {
+  color: var(--fg-strong);
+}
+
+table.euer tr.category td {
+  padding-top: 2px;
+  padding-bottom: 2px;
+  border-bottom: none;
+  font-size: 13px;
+}
+
+table.euer tr.total td {
+  color: var(--fg-strong);
+  font-weight: 600;
+  border-top: 1px solid var(--fg-muted);
+}
+
+table.euer tr.profit td {
+  color: var(--fg-strong);
+  font-weight: 700;
+  font-size: 16px;
+  border-bottom: 2px solid var(--fg-muted);
+}
+
+.checks {
+  list-style: none;
+  padding: 0;
+  margin: 12px 0 0;
+  display: flex;
+  gap: 4px 20px;
+  flex-wrap: wrap;
+  font-size: 13px;
+}
+
+.paths {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 16px;
+  margin: 0;
+}
+
+.paths dd {
+  margin: 0;
+}
+
+/* ---- toast */
+
+.toast {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 3;
+  max-width: min(480px, calc(100vw - 48px));
+  padding: 10px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.25);
+  color: var(--fg-strong);
+}
+
+.toast.bad {
+  border-color: var(--bad);
+}
+
+/* ---- print: the EÜR on white paper, then the year's entries */
+
+.print-only {
+  display: none;
+}
+
+@media print {
+  .print-only {
+    display: block;
+    break-before: page;
+  }
+
+  .print-only h2 {
+    margin-bottom: 8px;
+  }
+
+  :root {
+    color-scheme: light;
+  }
+
+  html,
+  body,
+  .card {
+    background: #fff;
+    color: #000;
+  }
+
+  .top,
+  .no-print,
+  .card-head button,
+  .notice,
+  .toast {
+    display: none !important;
+  }
+
+  main {
+    padding: 0;
+    max-width: none;
+  }
+
+  .card {
+    border: none;
+    padding: 0;
+  }
+
+  h2,
+  table.euer tr.group td,
+  table.euer tr.section th,
+  table.euer tr.total td,
+  table.euer tr.profit td {
+    color: #000;
+  }
+
+  .muted,
+  .sub,
+  table.euer td.line,
+  thead th {
+    color: #555;
+  }
+
+  th,
+  td {
+    border-color: #ccc;
+  }
+}
+
+@media (max-width: 640px) {
+  .top,
+  main {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .form-grid .wide {
+    grid-column: auto;
+  }
+}

@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+# Installs Bookkeeping on Omarchy: a user service that runs the local server
+# at login, and a "Bookkeeping" web app in the app launcher with a browser
+# profile of its own. Running it again after a `git pull` restarts the
+# server with the new code.
+# `setup --remove` takes both out again; the data and receipts stay.
+set -euo pipefail
+
+NAME=Bookkeeping
+UNIT=omarchy-bookkeeping.service
+PORT=47221
+URL="http://127.0.0.1:$PORT/"
+DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+UNIT_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/$UNIT"
+STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/omarchy-bookkeeping"
+DATA_FILE="$STATE_DIR/bookkeeping.json"
+# The window's browser profile: no extensions, and nothing shared with
+# everyday browsing.
+PROFILE="$STATE_DIR/browser"
+
+fail() {
+  echo "setup: $*" >&2
+  exit 1
+}
+
+case ${1:-} in
+  "") ;;
+  --remove)
+    systemctl --user disable --now "$UNIT" 2>/dev/null || true
+    rm -f "$UNIT_FILE"
+    systemctl --user daemon-reload
+    if command -v omarchy-webapp-remove >/dev/null; then
+      OMARCHY_REMOVE_NOTIFY=false omarchy-webapp-remove "$NAME" || true
+    fi
+    rm -rf "$PROFILE"
+    echo "Removed Bookkeeping's service and launcher entry. The data and receipts stay in $STATE_DIR."
+    exit 0
+    ;;
+  -h | --help)
+    echo "Usage: setup [--remove]"
+    exit 0
+    ;;
+  *) fail "unknown option: $1" ;;
+esac
+
+command -v omarchy-webapp-install >/dev/null || fail "omarchy-webapp-install not found; is this Omarchy?"
+PYTHON=$(command -v python3) || fail "python3 not found"
+"$PYTHON" -c 'import sys; sys.exit(sys.version_info < (3, 11))' || fail "Bookkeeping needs Python 3.11 or newer"
+[[ $DIR != *[[:space:]\"\\%]* ]] || fail "move the repository to a path without spaces, quotes, backslashes or %"
+[[ $PROFILE != *[[:space:]\"\\%]* ]] || fail "Bookkeeping needs a state directory without spaces, quotes, backslashes or %: $STATE_DIR"
+
+mkdir -p "$(dirname "$UNIT_FILE")"
+cat >"$UNIT_FILE" <<UNIT_EOF
+[Unit]
+Description=Bookkeeping: local server for the bookkeeping app ($DIR)
+
+[Service]
+ExecStart=$PYTHON $DIR/server.py --port $PORT
+Restart=on-failure
+
+[Install]
+WantedBy=default.target
+UNIT_EOF
+
+mkdir -p "$STATE_DIR"
+chmod 700 "$STATE_DIR"
+
+systemctl --user daemon-reload
+systemctl --user enable "$UNIT" >/dev/null
+systemctl --user restart "$UNIT"
+
+omarchy-webapp-install "$NAME" "$URL" "$DIR/icon.png" \
+  "omarchy-launch-webapp $URL --user-data-dir=$PROFILE --no-first-run --no-default-browser-check"
+
+for _ in $(seq 20); do
+  if curl -fs -o /dev/null "$URL"; then
+    echo "Bookkeeping runs on $URL"
+    echo "App launcher (Super+Space): Bookkeeping. Data: $DATA_FILE"
+    exit 0
+  fi
+  sleep 0.25
+done
+fail "the server did not start; see: journalctl --user -u $UNIT"
