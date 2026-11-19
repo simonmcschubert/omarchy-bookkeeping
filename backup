@@ -76,6 +76,9 @@ fi
 # file when this attempt failed, if that was a copy to the same place).
 record() {
   local result=$1 message=$2 success="" revision="" tmp
+  # Turned off meanwhile (setup --no-backup): no status, or the app would
+  # show a backup that no longer runs.
+  [[ -f $CONFIG ]] || return 0
   if [[ $result == ok ]]; then
     success=$(date --iso-8601=seconds)
     revision=$3
@@ -175,7 +178,9 @@ fi
 
 # The data file first, then the rest: a receipt is saved before the entry
 # that names it, so every receipt the copied file names is copied after it.
-copy --include=/bookkeeping.json --exclude="*"
+# By content: an edit of the same size in the same second as the last copy
+# leaves size and time alike, and the recorded revision must be what is there.
+copy --checksum --include=/bookkeeping.json --exclude="*"
 copy --exclude=/bookkeeping.json --exclude=/browser/ --exclude=/backup-status \
   --exclude=".backup-status.*" --exclude=".bookkeeping-*.tmp"
 

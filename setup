@@ -75,6 +75,8 @@ UNIT_EOF
 
 remove_backup() {
   systemctl --user disable --now "$BACKUP_UNIT.timer" 2>/dev/null || true
+  # Also a copy running right now, or it would write its status afterwards.
+  systemctl --user stop "$BACKUP_UNIT.service" 2>/dev/null || true
   rm -f "$UNIT_DIR/$BACKUP_UNIT.service" "$UNIT_DIR/$BACKUP_UNIT.timer" "$BACKUP_CONFIG" "$BACKUP_STATUS"
   systemctl --user daemon-reload
 }

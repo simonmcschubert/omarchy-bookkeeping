@@ -116,6 +116,19 @@ class BackupTest(unittest.TestCase):
         self.assertEqual(len(replaced), 1)
         self.assertEqual(replaced[0].read_text(), old)
 
+    def test_a_same_size_edit_in_the_same_second_is_copied(self):
+        self.configure(self.dest)
+        self.run_script()
+        data = self.state / "bookkeeping.json"
+        before = data.stat()
+        data.write_text(data.read_text().replace("[]", "{}"))
+        os.utime(data, ns=(before.st_atime_ns, before.st_mtime_ns))
+        self.assertEqual(data.stat().st_size, before.st_size)
+
+        self.assertEqual(self.run_script().returncode, 0)
+        self.assertEqual((self.dest / "bookkeeping.json").read_text(), data.read_text())
+        self.assertEqual(self.status()["last_revision"], hashlib.sha256(data.read_bytes()).hexdigest())
+
     def test_the_timer_copies_once_a_day(self):
         self.configure(self.dest)
         self.assertEqual(self.run_script("--daily").returncode, 0)
@@ -151,6 +164,13 @@ class BackupTest(unittest.TestCase):
         self.run_script("--daily", extra={"RSYNC_RSH": "ssh"})
         self.assertEqual(self.status()["last_success"], "", "a copy to the old destination is none to the new one")
 
+    def test_no_status_after_the_backup_was_turned_off_while_running(self):
+        # The "server" is reached just as setup --no-backup removes the config.
+        self.tool("ssh", f"#!/usr/bin/env bash\nrm -f '{self.config}'\necho 'ssh: connect to host server port 22: Connection timed out' >&2\nexit 255\n")
+        self.configure("user@server:backups/books")
+        self.run_script(extra={"RSYNC_RSH": "ssh"})
+        self.assertFalse((self.state / "backup-status").exists())
+
     def test_a_refused_key_is_an_error_with_a_reason(self):
         self.tool("ssh", fake_ssh("user@server: Permission denied (publickey)."))
         self.configure("user@server:backups/books")
@@ -184,6 +204,7 @@ class BackupTest(unittest.TestCase):
 
         result = self.run_script("--no-backup", script=SETUP)
         self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(f"--user stop {UNIT}.service", self.log.read_text(), "a copy running right now stops too")
         self.assertFalse((units / f"{UNIT}.timer").exists())
         self.assertFalse(self.config.exists())
         self.assertFalse((self.state / "backup-status").exists(), "Settings › Backup says: not set up")
