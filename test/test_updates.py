@@ -25,6 +25,7 @@ dir=$(dirname "$0")
 echo "$*" >> "$dir/calls"
 case $1 in
   version) echo 0.1.0 ;;
+  commit) echo 1a2b3c4d1a2b3c4d1a2b3c4d1a2b3c4d1a2b3c4d ;;
   check)
     [[ ! -e $dir/check.fail ]] || { echo "fatal: unable to access origin" >&2; echo "update: can't reach origin" >&2; exit 1; }
     cat "$dir/check.out" ;;
@@ -111,10 +112,11 @@ class UpdateTest(unittest.TestCase):
         status, body = self.request("GET")
         self.assertEqual(status, 200)
         self.assertEqual(body["installed"], "0.1.0")
+        self.assertEqual(body["commit"], "1a2b3c4d" * 5)
         self.assertEqual(body["channel"], "stable")
         self.assertEqual((body["status"], body["version"], body["checking"]), ("", "", False))
         self.assertRegex(body["boot"], r"^[0-9a-f]{16}$")
-        self.assertEqual(self.calls(), ["version", "channel"], "no check before the timer or the button asks")
+        self.assertEqual(self.calls(), ["version", "commit", "channel"], "no check before the timer or the button asks")
 
     def test_serves_the_button(self):
         conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
@@ -140,7 +142,7 @@ class UpdateTest(unittest.TestCase):
         # Still here after a successful install: not run by the service, so
         # it was not restarted. It checks again.
         self.assertEqual(self.settled()["status"], "")
-        self.assertEqual(self.calls(), ["version", "channel", "check", "check", "download 0.2.0", "install 0.2.0", "check"])
+        self.assertEqual(self.calls(), ["version", "commit", "channel", "check", "check", "download 0.2.0", "install 0.2.0", "check"])
 
     def test_install_and_download_only_in_turn(self):
         self.offer("available 0.2.0")
@@ -234,7 +236,7 @@ class UpdateTest(unittest.TestCase):
         conn.request("POST", "/api/update", body=b"null", headers={"Host": f"127.0.0.1:{self.port}", "Content-Type": "application/json"})
         self.assertEqual(conn.getresponse().status, 400)
         conn.close()
-        self.assertEqual(self.calls(), ["version", "channel"])
+        self.assertEqual(self.calls(), ["version", "commit", "channel"])
 
     def test_switching_the_channel_checks_it(self):
         self.offer("available 0.2.0")

@@ -68,6 +68,10 @@ class Updater:
         ok, out, _ = self.run("version")
         # The installed release: "" before the first or without a checkout.
         self.installed = out.strip() if ok else ""
+        ok, out, _ = self.run("commit")
+        # The installed commit, also before the first release: the page
+        # compares it to tell an update from a plain restart.
+        self.commit = out.strip() if ok else ""
         ok, out, _ = self.run("channel")
         # stable or preview; "" without a checkout.
         self.channel = out.strip() if ok else ""
@@ -93,6 +97,7 @@ class Updater:
                 "version": self.version,
                 "error": self.error,
                 "installed": self.installed,
+                "commit": self.commit,
                 "channel": self.channel,
                 "checking": self.checking,
                 "boot": self.boot,

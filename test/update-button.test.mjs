@@ -1,7 +1,7 @@
 // What the update button shows (app/update.mjs). Run: node --test
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { channelNote, updateButton, updateName } from "../app/update.mjs";
+import { channelNote, newCode, updateButton, updateName } from "../app/update.mjs";
 
 const idle = { checking: false, error: "", current: false };
 const server = (fields) => ({ status: "", version: "", error: "", installed: "0.1.0", channel: "stable", checking: false, boot: "b", ...fields });
@@ -81,5 +81,15 @@ test("an installed update waits for the open entry before the page reloads", () 
   });
   assert.equal(updateButton(server({ installed: "" }), waiting).tip,
     "A new version of Bookkeeping is installed. This window reloads with it once the open entry is saved or cancelled.");
+});
+
+test("a window reloads when the server runs other code, not after a plain restart", () => {
+  const before = server({ commit: "a".repeat(40) });
+  assert.equal(newCode(before, before), false, "same server");
+  assert.equal(newCode(before, { ...before, boot: "c" }), false, "restarted, same code");
+  assert.equal(newCode(before, { ...before, boot: "c", installed: "0.2.0", commit: "b".repeat(40) }), true, "a release");
+  const early = server({ installed: "", commit: "a".repeat(40) });
+  assert.equal(newCode(early, { ...early, boot: "c", commit: "b".repeat(40) }), true, "a preview before the first release");
+  assert.equal(newCode(null, before), false, "the first answer");
 });
 

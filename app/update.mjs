@@ -52,6 +52,15 @@ export function updateButton(server, asked) {
   return { icon: "refresh", text: "", tone: "", tip: `${s.installed ? `${installed} is installed. ` : ""}Click to check for updates.` };
 }
 
+// Whether the server now runs other code than when the page last asked:
+// before and now are GET /api/update. A new boot alone is a plain restart.
+// The commit tells previews apart before the first release, when installed
+// is empty for each of them.
+export function newCode(before, now) {
+  if (!before || now.boot === before.boot) return false;
+  return now.commit !== before.commit || now.installed !== before.installed;
+}
+
 // The line under the channel choice in Settings. choosing is the switch
 // the page asked for: busy, or the error it ended with.
 export function channelNote(server, choosing) {
@@ -178,8 +187,8 @@ export function startUpdates(root, { saving, editing = () => false }) {
     if (restarting) return;
     const { json } = await call("GET");
     if (!json || restarting) return;
-    if (server && json.boot !== server.boot && json.installed !== server.installed) {
-      // Another window or a terminal installed a release: this page is old.
+    if (newCode(server, json)) {
+      // Another window or a terminal installed an update: this page is old.
       await reload(json);
       return;
     }

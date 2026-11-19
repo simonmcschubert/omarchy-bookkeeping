@@ -23,6 +23,8 @@
 #                           answer
 #   update version          prints the installed release: X.Y.Z, X.Y.Z-N-gSHA
 #                           N commits past it, or nothing before the first
+#   update commit           prints the installed commit's full id, also
+#                           before the first release
 #   update channel [stable|preview]
 #                           prints the channel, or switches to it. Switching
 #                           installs nothing, and never goes back to an
@@ -219,12 +221,16 @@ version() {
   repo describe --tags --match 'v[0-9]*.[0-9]*.[0-9]*' --exclude 'v*-*' 2>/dev/null | sed 's/^v//' || true
 }
 
+commit() {
+  repo rev-parse --verify --quiet HEAD || true
+}
+
 usage() {
-  echo "Usage: update check | download UPDATE | install UPDATE | version | channel [stable|preview]"
+  echo "Usage: update check | download UPDATE | install UPDATE | version | commit | channel [stable|preview]"
 }
 
 case ${1:-} in
-  check | version) ;;
+  check | version | commit) ;;
   download | install)
     is_release "${2:-}" || is_preview "${2:-}" ||
       fail "not a release version or preview commit: '${2:-}'"

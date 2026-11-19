@@ -340,6 +340,21 @@ test("version names the installed release", (t) => {
   assert.match(s.run("version").stdout, /^0\.1\.0-1-g[0-9a-f]+\n$/);
 });
 
+test("commit names the installed commit, also before the first release", (t) => {
+  const s = sandbox(t);
+  const first = s.commit("Initial");
+  s.install();
+  assert.equal(s.run("version").stdout, "", "no release yet");
+  assert.equal(s.run("commit").stdout, `${first}\n`);
+
+  const newest = s.commit("Preview");
+  s.preview();
+  s.run("channel", "preview");
+  assert.equal(s.run("install", newest).status, 0);
+  assert.equal(s.run("version").stdout, "", "still no release");
+  assert.equal(s.run("commit").stdout, `${newest}\n`);
+});
+
 test("the channel is stable until switched, in the checkout's git config", (t) => {
   const s = sandbox(t);
   s.release("0.1.0");
