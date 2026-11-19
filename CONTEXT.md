@@ -1,0 +1,122 @@
+# Bookkeeping: domain language
+
+The words the app, the code and reviews use for the same things. Amounts are
+whole cents; dates are ISO dates (`2025-01-15`).
+
+**Entry**: one income or one expense, on the day the money moved
+(Zuflussprinzip). It has a date, an amount, a text, a category, a reference
+and maybe a receipt. _Avoid_: transaction, booking.
+
+**Income** and **Expense** (`kind`): the two kinds of entries. A negative
+amount is a refund of its kind.
+
+**Running number** (`number`, Nr.): the own number each income gets, counted
+on across years (`nextNumber`). Expenses have none.
+
+**Reference** (`ref`): the other side's invoice number: the supplier's for
+an expense, the payer's (Rechnungsnr. EXTERN) for income.
+
+**Category**: an account (`account`, Konto) and a name, of one kind, linked
+to one EÜR line (`group`). Its id is `in-<Konto>` or `ex-<Konto>`. A category
+without a line is **unlinked**: its entries are listed apart on the EÜR.
+
+**EÜR line** (`groups`): a line of Anlage EÜR, such as Laufende EDV-Kosten.
+Its **line number** is kept per **form year** (`lines`). A year without its
+own number takes the nearest form's and marks it **carried** (`lineFor`).
+The home office's line and the assets' lines take their amounts from those,
+not from categories (`isComputedGroup`).
+
+**Home office** (`homeOffice`): days of business work at home, by activity,
+per year. Times the **day rate** (`homeOfficeRate`: 6 € from 2023, 5 € in
+2020 to 2022, none before) up to the yearly cap, it is the Tagespauschale.
+
+**EÜR** (`euer()`): a year's Gewinnermittlung nach § 4 Abs. 3 EStG: income
+and expenses by line and category, the assets by line, the home office,
+the totals and the **profit** (Gewinn; negative: Verlust).
+
+**Filed profit** (`filed`): the profit of the EÜR sent to the tax office for
+a year, to check the entries against.
+
+**Closed year** (`closed`): a filed year whose entries can't change until it
+is reopened. Imports leave closed years out.
+
+**Daily copy** (`backups/`): the data file as it was before the first change
+of a day, kept next to it for 60 days (`back_up`). _Avoid_: backup, for this.
+
+**Backup** (`backup`, Settings › Backup): the copy of the data, its daily
+copies and the receipts on another computer, made once a day by the `backup`
+script. Its **destination** (`[user@]host:path`) is set by `setup --backup`;
+its result is in `backup-status`. Nothing at the destination is deleted.
+
+**Replaced copy** (`replaced/<date and time>/`): a file a backup replaced at
+the destination, kept there, so every version stays.
+
+**Receipt**: the file behind an entry: a PDF, photo or e-invoice XML, kept
+unchanged in `receipts/` under the SHA-256 of its content. `einvoice` says
+whether it was read as an e-invoice (unset on older receipts).
+
+**E-invoice**: a structured invoice by EN 16931: XRechnung or another, as XML
+in UBL or CII syntax, alone or inside a ZUGFeRD / Factur-X PDF. The server
+reads every receipt for one (`read_receipt`); the **reading** is `invoice`,
+`plain` (a photo, or a PDF without one) or `problem` (no e-invoice, or a
+broken one). _Avoid_: X-invoice, e-bill.
+
+**Supplier** (`seller`): who sent an e-invoice; its name starts the
+expense's text. **Amount payable** (`totals.payable`): what is left to pay,
+which becomes the expense's amount (the total, when it was paid already). A
+**credit note** (`credit`) makes it a refund.
+
+**Asset** (`assets`, Anlagegut): something bought for the business to use
+for more than a year, such as a laptop or a desk. It owns its purchase: it
+is no entry, and its cost counts as **write-off** over the years instead.
+Its **kind** (`type`) decides how: computer, computer accessory, software,
+office furniture and equipment, other. _Avoid_: fixed asset, item.
+
+**Cost** (`cost`, Anschaffungskosten): what an asset cost as paid, VAT
+included, since a Kleinunternehmer can't deduct it. **Net cost** (`netCost`)
+leaves out the VAT of the invoice (`vatRate`) and decides whether it is a
+GWG.
+
+**Bought** (`date`): the day an asset was delivered, which decides its year,
+not the day it was paid.
+
+**Write-off** (`treatment`): how an asset's cost is spread. **GWG**
+(geringwertiges Wirtschaftsgut, up to 800 € net): all in the year bought.
+**One year** (computers and software from 2021): all in the year bought, as
+AfA. **Linear**: AfA in equal amounts over its **useful life** (`life`,
+Nutzungsdauer, from the AfA table), by month in the first year.
+
+**AfA** (Absetzung für Abnutzung): the year's share of an asset's cost.
+
+**Book value** (Buchwert): an asset's cost less its write-off so far.
+
+**Gone** (`disposal`: date and price): the day an asset was sold, thrown away
+or taken for private use, and its price (0 when thrown away; its value then
+when taken). The **remaining book value** (Restbuchwert) that day is an
+expense; the price is income. _Avoid_: sold (it may not have been).
+
+**Anlage AVEÜR** (`aveur`): the asset list of the EÜR form, by block
+(immaterielle Wirtschaftsgüter, Büroausstattung, Andere), without the GWG.
+
+**Revenue limit** (`revenueLimit`): the most a year's income may be for the
+next year to stay without VAT (§ 19 UStG): 25.000 € from 2025, 22.000 € in
+2020 to 2024, 17.500 € before. From 2025 the current year may also not pass
+100.000 €; the app does not show that one. Sales of assets don't count
+(`yearTotals().revenue`).
+
+**Import**: CSV files of the spreadsheet tables (`readTable`), checked
+against the data (`planImport`) before they are added (`applyImport`). A
+**copy** has the same kind, date, amount and text as an entry already there,
+or as an expense made into an asset (`entryKey`), and is left out.
+
+**Data version** (`VERSION`): the format of the data file, the same in
+`books.mjs` and `server.py`. New fields keep it: a file without them still
+loads, and missing means empty. A file of a newer version stays closed
+(`unreadable`).
+
+**Update**: a newer version of the app's code, which the update button
+installs: a **release** (`X.Y.Z`, the git tag `vX.Y.Z`) or, on the Preview
+**channel**, a **preview** (a commit of `main` that passed CI, on the branch
+`preview`). The channel (`stable` or `preview`) is kept in the checkout's
+git config (`bookkeeping.channel`). Updates change only the code, never the
+data or receipts, and never go back to an older version. _Avoid_: upgrade.

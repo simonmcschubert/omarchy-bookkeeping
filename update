@@ -1,0 +1,257 @@
+#!/usr/bin/env bash
+# Finds, downloads, and installs updates of Bookkeeping. The server runs it
+# to offer them (server.py, Updater); it works from a terminal too. On the
+# stable channel an update is a release, a vX.Y.Z tag on the checkout's
+# origin (README.md, "Releases"). On the preview channel it is the newest
+# commit of origin's preview branch, which follows main once CI passed
+# (.github/workflows/preview.yml). Same as Finance's update script, with
+# Bookkeeping's names, port and unit.
+#
+# Updates change only this checkout, never the data and receipts in
+# ~/.local/state/omarchy-bookkeeping. They never go back to an older
+# version, which may not read data saved by a newer one (README.md,
+# "Update").
+#
+#   update check            prints "current", "available U", or
+#                           "downloaded U" for the newest update U on the
+#                           channel: a release X.Y.Z, or the full commit id
+#                           of a preview
+#   update download U       fetches the update; changes no files
+#   update install U        moves this checkout to the update and restarts
+#                           the server (omarchy-bookkeeping.service) with
+#                           it; goes back when the new server does not
+#                           answer
+#   update version          prints the installed release: X.Y.Z, X.Y.Z-N-gSHA
+#                           N commits past it, or nothing before the first
+#   update commit           prints the installed commit's full id, also
+#                           before the first release
+#   update channel [stable|preview]
+#                           prints the channel, or switches to it. Switching
+#                           installs nothing, and never goes back to an
+#                           older version: from a preview to stable, the
+#                           checkout stays as it is until a release is newer.
+#
+# Run without a terminal (as the server does), install also reports its
+# result as a notification.
+set -euo pipefail
+
+export GIT_TERMINAL_PROMPT=0
+export GIT_SSH_COMMAND="${GIT_SSH_COMMAND:-ssh -oBatchMode=yes}"
+
+# As in setup.
+UNIT=omarchy-bookkeeping.service
+URL=http://127.0.0.1:47221/
+# Moved by .github/workflows/preview.yml; only ever fast-forwarded.
+PREVIEW=refs/heads/preview
+DIR=$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+NOTIFY=0
+
+notify() {
+  if ((NOTIFY)); then notify-send "$@" 2>/dev/null || true; fi
+}
+
+fail() {
+  local message="$*"
+  echo "update: $message" >&2
+  notify "Bookkeeping update failed" "${message^}"
+  exit 1
+}
+
+repo() {
+  git -C "$DIR" "$@"
+}
+
+# "<commit> <version>" of the newest release on origin; nothing without one.
+newest_release() {
+  local refs
+  refs=$(timeout 30 git -C "$DIR" ls-remote --tags origin) || fail "can't reach origin"
+  # An annotated tag is listed twice; its ^{} line names the commit.
+  awk '{
+      tag = $2
+      sub(/^refs\/tags\//, "", tag)
+      peeled = sub(/\^\{\}$/, "", tag)
+      if (tag !~ /^v[0-9]+[.][0-9]+[.][0-9]+$/) next
+      if (peeled || !(tag in commit)) commit[tag] = $1
+    }
+    END { for (tag in commit) print commit[tag], substr(tag, 2) }' <<<"$refs" |
+    sort -k2,2V | tail -n 1
+}
+
+# The commit of the newest preview on origin; nothing before the first.
+newest_preview() {
+  local refs
+  refs=$(timeout 30 git -C "$DIR" ls-remote origin "$PREVIEW") || fail "can't reach origin"
+  awk -v ref="$PREVIEW" '$2 == ref { print $1 }' <<<"$refs"
+}
+
+is_release() {
+  [[ $1 =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+}
+
+is_preview() {
+  [[ $1 =~ ^[0-9a-f]{40}$ ]]
+}
+
+# How messages name update U: "0.2.0", or "preview 1a2b3c4".
+name() {
+  if is_release "$1"; then echo "$1"; else echo "preview ${1:0:7}"; fi
+}
+
+# The commit of update U once it is downloaded.
+downloaded() {
+  if is_release "$1"; then
+    repo rev-parse --quiet --verify "refs/tags/v$1^{commit}"
+  else
+    repo merge-base --is-ancestor "$1" refs/remotes/origin/preview 2>/dev/null && echo "$1"
+  fi
+}
+
+# The channel: stable or preview. It lives in the checkout's git config,
+# which updates leave alone.
+chosen_channel() {
+  local channel
+  channel=$(repo config --get bookkeeping.channel) || true
+  case ${channel:=stable} in
+    stable | preview) echo "$channel" ;;
+    *) fail "bookkeeping.channel is '$channel' in the git config of $DIR, not stable or preview" ;;
+  esac
+}
+
+channel() {
+  if (($#)); then
+    repo config --local bookkeeping.channel "$1"
+  else
+    chosen_channel
+  fi
+}
+
+check() {
+  local channel release commit="" version
+  channel=$(chosen_channel)
+  if [[ $channel == preview ]]; then
+    commit=$(newest_preview)
+    version=$commit
+  fi
+  # Stable, or no preview yet: releases.
+  if [[ -z $commit ]]; then
+    release=$(newest_release)
+    if [[ -z $release ]]; then
+      echo current
+      return
+    fi
+    read -r commit version <<<"$release"
+  fi
+  if repo merge-base --is-ancestor "$commit" HEAD 2>/dev/null; then
+    echo current
+  elif [[ $(downloaded "$version") == "$commit" ]]; then
+    echo "downloaded $version"
+  else
+    echo "available $version"
+  fi
+}
+
+download() {
+  downloaded "$1" >/dev/null && return
+  if is_release "$1"; then
+    timeout 120 git -C "$DIR" fetch --quiet --no-tags origin "refs/tags/v$1:refs/tags/v$1" ||
+      fail "can't download Bookkeeping $1"
+  else
+    # Brings the releases' tags along, for update version.
+    timeout 120 git -C "$DIR" fetch --quiet origin "+$PREVIEW:refs/remotes/origin/preview" ||
+      fail "can't download Bookkeeping $(name "$1")"
+    downloaded "$1" >/dev/null ||
+      fail "can't download Bookkeeping $(name "$1"): it is not on the preview branch of origin"
+  fi
+}
+
+# Whether the service runs the server of this checkout, as setup sets it up.
+serves_this_checkout() {
+  local served
+  served=$(systemctl --user show --property=ExecStart --value "$UNIT" 2>/dev/null |
+    grep -o '[^ ]*/server\.py' | head -n 1) || return 1
+  [[ $(realpath -e "$served" 2>/dev/null) == "$DIR/server.py" ]]
+}
+
+# Restarts the server and waits until it answers, as setup does. A server
+# that keeps failing (Restart=on-failure) soon makes systemd refuse to start
+# it again; reset-failed lifts that, so the version before can start.
+restart() {
+  local _
+  systemctl --user reset-failed "$UNIT" 2>/dev/null || true
+  systemctl --user restart "$UNIT" || return 1
+  for _ in $(seq 20); do
+    curl -fs -o /dev/null "$URL" && return 0
+    sleep 0.25
+  done
+  return 1
+}
+
+install() {
+  local update=$1 version commit moved=0
+  version=$(name "$update")
+  [[ -t 2 ]] || NOTIFY=1
+  serves_this_checkout ||
+    fail "can't update to $version: $UNIT does not run Bookkeeping from $DIR. Set it up with $DIR/setup"
+  download "$update"
+  commit=$(downloaded "$update")
+  if ! repo merge-base --is-ancestor "$commit" HEAD; then
+    # Going back after a failed start resets the whole checkout.
+    [[ -z $(repo status --porcelain --untracked-files=no) ]] ||
+      fail "can't update to $version: $DIR has local changes"
+    repo merge --ff-only --quiet "$commit" >/dev/null 2>&1 ||
+      fail "can't update to $version: $DIR has local commits"
+    moved=1
+  fi
+  if ! restart; then
+    ((moved)) || fail "Bookkeeping did not start again. See: journalctl --user -u $UNIT"
+    repo reset --hard --quiet ORIG_HEAD
+    restart ||
+      fail "Bookkeeping $version did not start, and the version before it did not start again either. See: journalctl --user -u $UNIT"
+    fail "Bookkeeping $version did not start, so Bookkeeping stays as it was. See: journalctl --user -u $UNIT"
+  fi
+  echo "Bookkeeping $version is installed."
+  if is_release "$update"; then
+    notify "Bookkeeping updated" "Version $version is installed."
+  else
+    notify "Bookkeeping updated" "${version^} is installed."
+  fi
+}
+
+version() {
+  repo describe --tags --match 'v[0-9]*.[0-9]*.[0-9]*' --exclude 'v*-*' 2>/dev/null | sed 's/^v//' || true
+}
+
+commit() {
+  repo rev-parse --verify --quiet HEAD || true
+}
+
+usage() {
+  echo "Usage: update check | download UPDATE | install UPDATE | version | commit | channel [stable|preview]"
+}
+
+case ${1:-} in
+  check | version | commit) ;;
+  download | install)
+    is_release "${2:-}" || is_preview "${2:-}" ||
+      fail "not a release version or preview commit: '${2:-}'"
+    ;;
+  channel)
+    (($# == 1)) || [[ $# == 2 && $2 =~ ^(stable|preview)$ ]] ||
+      fail "not a channel: '${*:2}'; choose stable or preview"
+    ;;
+  -h | --help)
+    usage
+    exit 0
+    ;;
+  *)
+    usage >&2
+    exit 1
+    ;;
+esac
+
+# Only Bookkeeping's own checkout: not a repository it happens to sit in,
+# such as one that keeps the home directory.
+[[ $(repo rev-parse --show-toplevel 2>/dev/null) == "$DIR" ]] ||
+  fail "$DIR is not a git checkout, so there is nothing to update from"
+
+"$1" "${@:2}"

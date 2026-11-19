@@ -1,0 +1,192 @@
+/* Received e-invoices: the drop zone on the Entries page, the note in the
+   form, and the readable view of an e-invoice. Colors from style.css. */
+
+.drop-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 4;
+  display: grid;
+  place-items: center;
+  background: rgb(0 0 0 / 0.35);
+  pointer-events: none;
+}
+
+.drop-overlay[hidden] {
+  display: none;
+}
+
+.drop-overlay p {
+  margin: 16px;
+  padding: 28px 36px;
+  background: var(--surface);
+  color: var(--fg-strong);
+  border: 2px dashed var(--accent);
+  border-radius: 12px;
+  font-size: 16px;
+  text-align: center;
+}
+
+/* ---- in the form */
+
+.from-file {
+  display: grid;
+  gap: 2px;
+  padding: 8px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 6px;
+}
+
+.from-file.warn {
+  border-left-color: var(--risk);
+}
+
+.from-file p {
+  margin: 0;
+}
+
+.from-file strong {
+  color: var(--fg-strong);
+}
+
+.date-picks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+  font-size: 12px;
+}
+
+.date-picks button.link {
+  padding: 0;
+}
+
+.receipt-links {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.receipt-links button.link {
+  padding: 0;
+}
+
+/* ---- the readable view */
+
+dialog.invoice-view {
+  width: min(920px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  padding: 0;
+  background: var(--surface);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 32px rgb(0 0 0 / 0.35);
+}
+
+dialog.invoice-view::backdrop {
+  background: rgb(0 0 0 / 0.5);
+}
+
+.invoice-view .sheet {
+  display: grid;
+  gap: 16px;
+  padding: 20px;
+}
+
+.invoice-view .sheet-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.invoice-view .sheet-head > div {
+  margin-right: auto;
+}
+
+.invoice-view .sheet-head p {
+  margin: 2px 0 0;
+}
+
+.invoice-view .sheet-head a {
+  line-height: calc(1.5em + 14px);
+}
+
+.invoice-view h3 {
+  margin-bottom: 4px;
+  color: var(--fg-muted);
+  font-size: 12px;
+  font-weight: normal;
+}
+
+.invoice-view .parties {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
+}
+
+.invoice-view .party p {
+  margin: 0;
+}
+
+.invoice-view .party p:nth-of-type(1) {
+  color: var(--fg-strong);
+}
+
+.invoice-view dl.facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 2px 16px;
+  margin: 0;
+}
+
+.invoice-view dl.facts dt {
+  color: var(--fg-muted);
+}
+
+.invoice-view dl.facts dd {
+  margin: 0;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.invoice-view .table-scroll {
+  overflow-x: auto;
+}
+
+.invoice-view table.lines td {
+  vertical-align: top;
+}
+
+.invoice-view .sub.pre,
+.invoice-view .notes p {
+  white-space: pre-line;
+}
+
+.invoice-view table.totals {
+  width: auto;
+  min-width: min(380px, 100%);
+  margin-left: auto;
+}
+
+.invoice-view table.totals tr.strong td {
+  color: var(--fg-strong);
+  font-weight: 700;
+  border-top: 1px solid var(--fg-muted);
+}
+
+.invoice-view .notes p {
+  margin: 0 0 4px;
+}
+
+.invoice-view .problems {
+  color: var(--risk-text);
+}
+
+@media print {
+  .drop-overlay,
+  dialog.invoice-view {
+    display: none !important;
+  }
+}

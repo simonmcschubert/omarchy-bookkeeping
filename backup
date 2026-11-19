@@ -1,0 +1,194 @@
+#!/usr/bin/env bash
+# Copies Bookkeeping's data and receipts to another computer, with rsync over
+# SSH (or to a local directory). `setup --backup [user@]host:path` sets where,
+# and installs a timer that runs this every hour with --daily.
+#
+#   backup           copy now
+#   backup --daily   copy, unless today's copy is done already (the timer)
+#
+# Copied: everything in ~/.local/state/omarchy-bookkeeping (the data file,
+# its daily copies in backups/, the receipts) except the window's browser
+# profile. Nothing at the destination is ever deleted. A file that changed
+# here replaces its copy there, and the old copy moves to
+# replaced/<date and time>/: so every version the destination got is kept.
+# Receipts never change, so each one is copied once and stays.
+#
+# When the destination can't be reached (offline, asleep, the server off),
+# it says so in one line and ends without an error: the timer tries again in
+# an hour. Other problems (key refused, unknown host key, disk full) end with
+# an error. Either way, the result goes to backup-status next to the data
+# file, where Settings › Backup reads it.
+set -euo pipefail
+
+STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/omarchy-bookkeeping"
+CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy-bookkeeping/backup.conf"
+DATA_FILE="$STATE_DIR/bookkeeping.json"
+STATUS="$STATE_DIR/backup-status"
+SSH_OPTIONS="-o BatchMode=yes -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=4"
+
+usage() {
+  echo "Usage: backup [--daily]"
+}
+
+daily=0
+case ${1:-} in
+  "") ;;
+  --daily) daily=1 ;;
+  -h | --help)
+    usage
+    exit 0
+    ;;
+  *)
+    usage >&2
+    exit 2
+    ;;
+esac
+
+# One value of a KEY=value file, read as text, never run as shell code.
+value() {
+  [[ -f $1 ]] || return 0
+  sed -n "s/^$2=//p" "$1" | tail -n 1
+}
+
+[[ -f $CONFIG ]] || {
+  echo "backup: no destination set up. Set one with: setup --backup [user@]host:path" >&2
+  exit 1
+}
+DEST=$(value "$CONFIG" destination)
+[[ -n $DEST ]] || {
+  echo "backup: $CONFIG names no destination" >&2
+  exit 1
+}
+
+# One copy at a time: a second one started meanwhile has nothing to add.
+exec 9<"$CONFIG"
+flock -n 9 || {
+  echo "Another copy is running."
+  exit 0
+}
+
+if ((daily)) && [[ $(value "$STATUS" destination) == "$DEST" ]]; then
+  last=$(value "$STATUS" last_success)
+  [[ ${last:0:10} != "$(date +%F)" ]] || exit 0
+fi
+
+# Writes backup-status: this attempt, and the last success (kept from the
+# file when this attempt failed, if that was a copy to the same place).
+record() {
+  local result=$1 message=$2 success="" revision="" tmp
+  # Turned off meanwhile (setup --no-backup): no status, or the app would
+  # show a backup that no longer runs.
+  [[ -f $CONFIG ]] || return 0
+  if [[ $result == ok ]]; then
+    success=$(date --iso-8601=seconds)
+    revision=$3
+  elif [[ $(value "$STATUS" destination) == "$DEST" ]]; then
+    success=$(value "$STATUS" last_success)
+    revision=$(value "$STATUS" last_revision)
+  fi
+  mkdir -p "$STATE_DIR"
+  tmp=$(mktemp "$STATE_DIR/.backup-status.XXXXXX")
+  {
+    echo "destination=$DEST"
+    echo "last_attempt=$(date --iso-8601=seconds)"
+    echo "result=$result"
+    echo "message=${message//$'\n'/ }"
+    echo "last_success=$success"
+    echo "last_revision=$revision"
+  } >"$tmp"
+  mv -f "$tmp" "$STATUS"
+}
+
+fail() {
+  record failed "$1"
+  echo "backup: $1" >&2
+  exit 1
+}
+
+command -v rsync >/dev/null || fail "rsync is missing. Install it once: sudo pacman -S rsync"
+[[ -d $STATE_DIR ]] || fail "nothing to copy: $STATE_DIR does not exist"
+
+# The SSH agent of the login session, saved by setup: a timer runs outside
+# that session and may not know it.
+agent=$(value "$CONFIG" ssh_auth_sock)
+if [[ -n $agent && -S $agent ]]; then
+  export SSH_AUTH_SOCK=$agent
+fi
+
+# [user@]host of a destination on another computer; empty for a local one.
+remote=""
+if [[ $DEST == *:* && $DEST != /* ]]; then
+  remote=${DEST%%:*}
+fi
+host=${remote#*@}
+
+errors=$(mktemp)
+listed=$(mktemp)
+trap 'rm -f "$errors" "$listed"' EXIT
+
+# The plain-language reason for a failed copy, from rsync's and ssh's output.
+reason() {
+  if grep -qE "Host key verification failed|host key for .* has changed|No .* host key is known" "$errors"; then
+    echo "$host's SSH host key is not confirmed yet. Connect once in a terminal: ssh $remote true"
+  elif grep -qE "Permission denied \(" "$errors"; then
+    echo "$host refused the SSH key. Is the SSH agent running with the key (ssh-add -l)? Then run setup --backup again."
+  elif grep -qE "rsync: (command )?not found|rsync: No such file" "$errors"; then
+    echo "rsync is missing on $host"
+  elif grep -qE "No space left on device" "$errors"; then
+    echo "The disk at $DEST is full"
+  else
+    grep -vE "^rsync error:|connection unexpectedly closed|^\s*$" "$errors" | head -n 1 | cut -c 1-300
+  fi
+}
+
+# ssh's words for a destination that can't be reached right now.
+unreachable() {
+  [[ -n $host ]] && grep -qE "ssh: connect to host|ssh: Could not resolve hostname|Network is unreachable|No route to host|Connection timed out|Operation timed out|Connection reset by peer|Timeout, server .* not responding|Broken pipe" "$errors"
+}
+
+stamp=$(date +%Y-%m-%dT%H%M%S)
+options=(
+  --recursive --times --perms "--chmod=D700,F600" --mkpath
+  # A file that changes here keeps its old copy there, in replaced/<stamp>/.
+  --backup "--backup-dir=replaced/$stamp"
+  "--rsh=${RSYNC_RSH:-ssh} $SSH_OPTIONS"
+  --out-format=%i
+)
+
+copy() {
+  local status=0
+  rsync "${options[@]}" "$@" "$STATE_DIR/" "$DEST/" >>"$listed" 2>"$errors" || status=$?
+  # 24: files went away while copying, such as an old daily copy pruned;
+  # the rest is copied.
+  if ((status != 0 && status != 24)); then
+    if unreachable; then
+      record unreachable "$host not reachable"
+      echo "$host not reachable; the timer tries again in an hour."
+      exit 0
+    fi
+    cat "$errors" >&2
+    fail "$(reason)"
+  fi
+}
+
+revision=none
+if [[ -f $DATA_FILE ]]; then
+  revision=$(sha256sum "$DATA_FILE" | cut -d " " -f 1)
+fi
+
+# The data file first, then the rest: a receipt is saved before the entry
+# that names it, so every receipt the copied file names is copied after it.
+# By content: an edit of the same size in the same second as the last copy
+# leaves size and time alike, and the recorded revision must be what is there.
+copy --checksum --include=/bookkeeping.json --exclude="*"
+copy --exclude=/bookkeeping.json --exclude=/browser/ --exclude=/backup-status \
+  --exclude=".backup-status.*" --exclude=".bookkeeping-*.tmp"
+
+files=$(grep -cE "^[<>]f" "$listed" || true)
+case $files in
+  0) message="Nothing new to copy" ;;
+  1) message="1 file copied" ;;
+  *) message="$files files copied" ;;
+esac
+record ok "$message" "$revision"
+echo "$message to $DEST"
