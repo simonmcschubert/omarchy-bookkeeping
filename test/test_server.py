@@ -41,7 +41,7 @@ class ServerTest(unittest.TestCase):
         self.assertEqual(response.status, 200)
         self.assertIn(b"Bookkeeping", body)
         self.assertIn("script-src 'self'", response.getheader("Content-Security-Policy"))
-        for path in ("/app.mjs", "/books.mjs", "/import.mjs", "/style.css", "/icon.svg"):
+        for path in ("/app.mjs", "/books.mjs", "/import.mjs", "/backup.mjs", "/style.css", "/icon.svg"):
             self.assertEqual(self.request("GET", path)[0].status, 200, path)
 
     def test_save_and_conflict(self):
@@ -96,6 +96,34 @@ class ServerTest(unittest.TestCase):
         self.assertEqual(self.request("GET", "/api/data", headers={"Host": "evil.example"})[0].status, 403)
         response, _ = self.request("POST", "/api/receipts", b"x", {"Content-Type": "application/pdf", "Origin": "http://evil.example"})
         self.assertEqual(response.status, 403)
+
+    def test_backup_status(self):
+        _, body = self.request("GET", "/api/backup")
+        reply = json.loads(body)
+        self.assertIsNone(reply["status"], "no backup set up")
+        self.assertTrue(reply["setup"].endswith("/setup"))
+        self.assertTrue(reply["backup"].endswith("/backup"))
+
+        (Path(self.dir.name) / "backup-status").write_text(
+            "destination=user@server:backups/books\n"
+            "last_attempt=2026-11-19T14:00:00+01:00\n"
+            "result=unreachable\n"
+            "message=server not reachable\n"
+            "last_success=2026-11-19T03:00:00+01:00\n"
+            "last_revision=abc\n"
+        )
+        _, body = self.request("GET", "/api/backup")
+        self.assertEqual(
+            json.loads(body)["status"],
+            {
+                "destination": "user@server:backups/books",
+                "lastAttempt": "2026-11-19T14:00:00+01:00",
+                "result": "unreachable",
+                "message": "server not reachable",
+                "lastSuccess": "2026-11-19T03:00:00+01:00",
+                "lastRevision": "abc",
+            },
+        )
 
     def test_theme(self):
         (Path(self.dir.name) / "colors.toml").write_text('background = "#ffffff"\naccent = "#123456"\n')

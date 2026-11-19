@@ -25,6 +25,7 @@ from pathlib import Path
 PORT = 47221
 APP_DIR = Path(__file__).resolve().parent / "app"
 SETUP_SCRIPT = Path(__file__).resolve().parent / "setup"
+BACKUP_SCRIPT = Path(__file__).resolve().parent / "backup"
 MAX_BODY = 20 * 1024 * 1024
 MAX_RECEIPT = 25 * 1024 * 1024
 NO_FILE = "none"
@@ -40,6 +41,7 @@ STATIC = {
     "/app.mjs": ("app.mjs", "text/javascript; charset=utf-8"),
     "/books.mjs": ("books.mjs", "text/javascript; charset=utf-8"),
     "/import.mjs": ("import.mjs", "text/javascript; charset=utf-8"),
+    "/backup.mjs": ("backup.mjs", "text/javascript; charset=utf-8"),
     "/icon.svg": ("icon.svg", "image/svg+xml"),
 }
 
@@ -143,6 +145,33 @@ def backup_dir(data_file):
 
 def receipt_dir(data_file):
     return Path(data_file).parent / "receipts"
+
+
+def backup_status(data_file):
+    """The nightly copy to another computer, as the backup script last wrote
+    it to backup-status next to the data file; None when none is set up."""
+    raw = read_file(Path(data_file).parent / "backup-status")
+    if raw is None:
+        return None
+    fields = {}
+    for line in raw.decode("utf-8", "replace").splitlines():
+        key, found, value = line.partition("=")
+        if found:
+            fields[key.strip()] = value.strip()
+    return {
+        "destination": fields.get("destination", ""),
+        "lastAttempt": fields.get("last_attempt") or None,
+        "result": fields.get("result") or None,  # ok, unreachable or failed
+        "message": fields.get("message", ""),
+        "lastSuccess": fields.get("last_success") or None,
+        "lastRevision": fields.get("last_revision") or None,
+    }
+
+
+def home_short(path):
+    """The path as typed in a terminal: ~/.local/share/… for one at home."""
+    home = Path.home()
+    return f"~/{Path(path).relative_to(home)}" if Path(path).is_relative_to(home) else str(path)
 
 
 def today():
@@ -272,6 +301,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
         path = self.path.split("?", 1)[0]
         if path == "/api/data":
             self.send_json(200, self.current())
+        elif path == "/api/backup":
+            status = backup_status(self.server.data_file)
+            self.send_json(200, {"status": status, "setup": home_short(SETUP_SCRIPT), "backup": home_short(BACKUP_SCRIPT)})
         elif path.startswith("/api/receipts/"):
             self.get_receipt(path.removeprefix("/api/receipts/"))
         elif path == "/theme.css":
