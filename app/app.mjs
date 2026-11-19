@@ -168,7 +168,7 @@ async function save() {
 
 /** Saves a receipt file. The server also reads it as an e-invoice: the
  *  reading says what it found (status invoice, plain or problem). */
-async function uploadReceipt(file) {
+async function uploadAndRead(file) {
   const types = { "text/xml": "application/xml", "": guessType(file.name) };
   const type = types[file.type] ?? file.type;
   const response = await fetch("/api/receipts", { method: "POST", headers: { "Content-Type": type }, body: file });
@@ -179,6 +179,11 @@ async function uploadReceipt(file) {
   // Remembered for the readable view: an XML file may be no e-invoice.
   if (reading.status === "invoice" || body.file.endsWith(".xml")) receipt.einvoice = reading.status === "invoice";
   return { receipt, reading };
+}
+
+/** Saves a receipt file: { file, name }, for a form that only keeps it. */
+async function uploadReceipt(file) {
+  return (await uploadAndRead(file)).receipt;
 }
 
 function guessType(name) {
@@ -571,7 +576,7 @@ async function addFile(file, { fresh = false, note = null } = {}) {
   toast(`Reading ${file.name}…`);
   let upload;
   try {
-    upload = await uploadReceipt(file);
+    upload = await uploadAndRead(file);
   } catch (error) {
     toast(`Not added: ${error.message}`, "bad");
     return;
